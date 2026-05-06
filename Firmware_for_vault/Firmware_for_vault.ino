@@ -1,9 +1,5 @@
 #include "FS.h"
-#include "SD.h"
 #include "SPI.h"
-#include <PS2KeyAdvanced.h>
-#include <PS2KeyMap.h>
-#include <EncButton2.h>
 #include <esp_now.h>
 #include <WiFi.h>
 #include "DES.h"
@@ -13,25 +9,24 @@
 #include "Crypto.h"
 #include "midbaricon.h"
 #include "sha512.h"
-// SD card lỗi nên dùng mem của esp tạm
-#include <SPIFFS.h>     // Thư viện bộ nhớ Flash nội bộ
+#include <SPIFFS.h>     
 #define SD SPIFFS
-#define DATAPIN 16
-#define IRQPIN 22
 #include <TFT_eSPI.h>
-TFT_eSPI tft = TFT_eSPI();       // Invoke custom library
+TFT_eSPI tft = TFT_eSPI();       
 TFT_eSprite mvng_bc = TFT_eSprite(&tft);
 #define MAX_NUM_OF_RECS 500
+// --- DUMMY HARDWARE HACK ---
+#define PS2_BREAK 0
+struct DummyButton { void tick(){} bool press(){ return false; } bool hasClicks(int c){ return false; } };
+struct DummyEncoder { void tick(){} bool left(){ return false; } bool right(){ return false; } bool turn(){ return false; } };
+struct DummyKeyboard { bool available(){ return false; } int read(){ return 0; } };
+DummyEncoder enc0;
+DummyButton a_button, b_button, encoder_button;
+DummyKeyboard keyboard;
+// ---------------------------
 DES des;
 Blowfish blowfish;
-EncButton2 < EB_ENC > enc0(INPUT, 26, 27);
-EncButton2 < EB_BTN > encoder_button(INPUT, 33);
-EncButton2 < EB_BTN > a_button(INPUT, 34);
-EncButton2 < EB_BTN > b_button(INPUT, 32);
-PS2KeyAdvanced keyboard;
-PS2KeyMap keymap;
 uint16_t code;
-
 int m;
 int clb_m;
 String dec_st;
@@ -50,8 +45,11 @@ const uint16_t current_inact_clr = 0x051b;
 const uint16_t five_six_five_red_color = 0xf940;
 bool sd_mnt;
 
-uint8_t broadcastAddress[] = {0x94, 0xE6, 0x86, 0x37, 0xFF, 0xD8}; // Receiver's MAC address
-
+uint8_t broadcastAddress[] = {0x94, 0xE6, 0x86, 0x37, 0xFF, 0xD8}; 
+esp_now_peer_info_t peerInfo;
+int chosen_lock_screen; // Thêm biến này vào
+unsigned int k;
+// ---> GIỮ NGUYÊN TOÀN BỘ PHẦN KHAI BÁO KEY Ở DƯỚI (read_cards, AES_key, v.v...)
 // Keys (Below)
 
 byte read_cards[16] = {
@@ -126,10 +124,7 @@ uint8_t proj_serp_key[32] = {
 0x3e,0xca,0xc0,0x07
 };
 
-// Keys (Above)
-
-esp_now_peer_info_t peerInfo;
-
+// Keys (Above) 
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
@@ -3308,20 +3303,19 @@ void disp_stars() {
   tft.setCursor(0, 48);
   tft.print(stars);
 }
-
 void encdr_and_keyb_input() {
   finish_input = false;
-  keyboard_input = ""; // Xóa dữ liệu cũ
+  keyboard_input = ""; 
   disp(); 
-  Serial.println("\n[HE THONG] Nhap noi dung vao Serial Monitor va nhan Enter:");
+  Serial.println("\n[HE THONG] Nhap noi dung vao Serial Monitor va nhan Enter (Go 'ESC' de huy):");
   
-  while (finish_input == false) {
+  while (!finish_input) {
     if (Serial.available()) {
-      String input = Serial.readStringUntil('\n'); // Đọc nguyên cả câu
-      input.trim(); // Cắt khoảng trắng thừa
+      String input = Serial.readStringUntil('\n'); 
+      input.trim(); 
       
       if (input.length() > 0) {
-        if (input == "ESC") { // Gõ ESC để hủy
+        if (input == "ESC") { 
           act = false;
         } else {
           keyboard_input = input;
@@ -3333,19 +3327,24 @@ void encdr_and_keyb_input() {
     delay(10);
   }
 }
+
 void star_encdr_and_keyb_input() {
   finish_input = false;
   keyboard_input = "";
   disp_stars();
-  Serial.println("\n[BẢO MẬT] Nhap Mat khau (An) vao Serial Monitor va nhan Enter:");
+  Serial.println("\n[BAO MAT] Nhap Mat khau (An) vao Serial Monitor va nhan Enter:");
   
-  while (finish_input == false) {
+  while (!finish_input) {
     if (Serial.available()) {
       String input = Serial.readStringUntil('\n');
       input.trim();
       
       if (input.length() > 0) {
-        keyboard_input = input;
+        if (input == "ESC") {
+          act = false;
+        } else {
+          keyboard_input = input;
+        }
         disp_stars();
         finish_input = true;
       }
@@ -3353,7 +3352,6 @@ void star_encdr_and_keyb_input() {
     delay(10);
   }
 }
-
 // Functions that work with files in LittleFS (Below)
 
 void write_to_file_with_overwrite(fs::FS &fs, String filename, String content) {
@@ -3400,35 +3398,31 @@ void delete_file(fs::FS &fs, String filename){
 // Functions for Logins (Below)
 
 void select_login(byte what_to_do_with_it) {
-  // 0 - Add login
-  // 1 - Edit login
-  // 2 - Delete login
-  // 3 - View login
   delay(200);
   curr_key = 1;
   header_for_select_login(what_to_do_with_it);
   display_title_from_login_without_integrity_verification();
+  
   bool continue_to_next = false;
-  while (continue_to_next == false) {
-    
-    // --- BỘ NHẬN LỆNH TỪ SERIAL MONITOR ---
+  while (!continue_to_next) {
     if (Serial.available()) {
       char ser_char = Serial.read();
-      // Gõ 'w' hoặc '2' để Tăng Slot (Cuộn lên)
+      
+      // Cuộn lên
       if (ser_char == 'w' || ser_char == '2') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_login(what_to_do_with_it);
-         display_title_from_login_without_integrity_verification();
-      }
-      // Gõ 's' hoặc '8' để Giảm Slot (Cuộn xuống)
-      else if (ser_char == 's' || ser_char == '8') {
          curr_key--;
          if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
          header_for_select_login(what_to_do_with_it);
          display_title_from_login_without_integrity_verification();
       }
-      // Gõ 'e' hoặc '5' để CHỌN SLOT NÀY (Enter)
+      // Cuộn xuống
+      else if (ser_char == 's' || ser_char == '8') {
+         curr_key++;
+         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+         header_for_select_login(what_to_do_with_it);
+         display_title_from_login_without_integrity_verification();
+      }
+      // Chọn / Enter
       else if (ser_char == 'e' || ser_char == '5') {
          int chsn_slot = curr_key;
          if (what_to_do_with_it == 0) {
@@ -3448,131 +3442,15 @@ void select_login(byte what_to_do_with_it) {
            view_login(chsn_slot);
          }
          continue_to_next = true;
-         break;
       }
-      // Gõ 'b' hoặc 'q' để HỦY / QUAY LẠI (Esc)
+      // Trở lại / Thoát
       else if (ser_char == 'b' || ser_char == 'q') {
          call_main_menu();
          continue_to_next = true;
-         break;
       }
     }
-    // ----------------------------------------
-
-    enc0.tick();
-
-    if (enc0.left()) {
-      curr_key--;
-    }
-
-    if (enc0.right()) {
-      curr_key++;
-    }
-
-    if (curr_key < 1)
-      curr_key = MAX_NUM_OF_RECS;
-
-    if (curr_key > MAX_NUM_OF_RECS)
-      curr_key = 1;
-
-    if (enc0.turn()) {
-      header_for_select_login(what_to_do_with_it);
-      display_title_from_login_without_integrity_verification();
-    }
-    delayMicroseconds(500);
-
-    a_button.tick();
-    if (a_button.press()) {
-      int chsn_slot = curr_key;
-      if (what_to_do_with_it == 0) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          add_login_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          add_login_from_serial(chsn_slot);
-      }
-      if (what_to_do_with_it == 1) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          edit_login_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          edit_login_from_serial(chsn_slot);
-      }
-      if (what_to_do_with_it == 2) {
-        delete_login(chsn_slot);
-      }
-      if (what_to_do_with_it == 3) {
-        view_login(chsn_slot);
-      }
-      continue_to_next = true;
-      break;
-    }
-    delayMicroseconds(500);
-
-    b_button.tick();
-    if (b_button.press()) {
-      call_main_menu();
-      continue_to_next = true;
-      break;
-
-    }
-    delayMicroseconds(500);
-
-    if (keyboard.available()) {
-      // read the next key
-      c = keyboard.read();
-
-
-          if (c == 278)
-            curr_key++;
-
-          if (c == 277)
-            curr_key--;
-
-          if (curr_key < 1)
-            curr_key = MAX_NUM_OF_RECS;
-
-          if (curr_key > MAX_NUM_OF_RECS)
-            curr_key = 1;
-
-          if ((c & 0xFF) == 30) { // Enter
-            int chsn_slot = curr_key;
-            if (what_to_do_with_it == 0) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                add_login_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                add_login_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 1) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                edit_login_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                edit_login_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 2) {
-              delete_login(chsn_slot);
-            }
-            if (what_to_do_with_it == 3) {
-              view_login(chsn_slot);
-            }
-            continue_to_next = true;
-            break;
-          }
-
-          if ((c & 0xFF) == 27) {
-            call_main_menu();
-            continue_to_next = true;
-            break;
-          }
-          delay(200);
-          header_for_select_login(what_to_do_with_it);
-          display_title_from_login_without_integrity_verification();
-    }
-    delayMicroseconds(500);
+    delay(10); // Ngăn Watchdog timer reset ESP32
   }
-  return;
 }
 void header_for_select_login(byte what_to_do_with_it) {
   tft.fillScreen(0x0000);
@@ -3677,50 +3555,7 @@ void get_title_for_login_from_serial(int chsn_slot) {
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Title");
     Serial.println("\nPaste the title here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_username_for_login_from_serial(chsn_slot, Serial.readString());
     cont_to_next = true;
     break;
@@ -3789,50 +3624,7 @@ void get_password_for_login_from_serial(int chsn_slot, String entered_title, Str
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Password");
     Serial.println("\nPaste the password here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_website_for_login_from_serial(chsn_slot, entered_title, entered_username, Serial.readString());
     cont_to_next = true;
     break;
@@ -3845,50 +3637,7 @@ void get_website_for_login_from_serial(int chsn_slot, String entered_title, Stri
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Website");
     Serial.println("\nPaste the website here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     write_login_to_flash(chsn_slot, entered_title, entered_username, entered_password, Serial.readString());
     cont_to_next = true;
     break;
@@ -4009,50 +3758,7 @@ void edit_login_from_serial(int chsn_slot) {
   while (cont_to_next == false) {
     disp_paste_smth_inscr("New Password");
     Serial.println("\nPaste new password here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     update_login_and_tag(chsn_slot, Serial.readString());
     cont_to_next = true;
     break;
@@ -4180,6 +3886,7 @@ void view_login(int chsn_slot) {
       }
     }
   }
+  press_any_key_to_continue();
 }
 
 // Functions for Logins (Above)
@@ -4191,123 +3898,56 @@ void select_credit_card(byte what_to_do_with_it) {
   curr_key = 1;
   header_for_select_credit_card(what_to_do_with_it);
   display_title_from_credit_card_without_integrity_verification();
+  
   bool continue_to_next = false;
-  while (continue_to_next == false) {
-    enc0.tick();
-
-    if (enc0.left()) {
-      curr_key--;
-    }
-
-    if (enc0.right()) {
-      curr_key++;
-    }
-
-    if (curr_key < 1)
-      curr_key = MAX_NUM_OF_RECS;
-
-    if (curr_key > MAX_NUM_OF_RECS)
-      curr_key = 1;
-
-    if (enc0.turn()) {
-      header_for_select_credit_card(what_to_do_with_it);
-      display_title_from_credit_card_without_integrity_verification();
-    }
-    delayMicroseconds(500);
-
-    a_button.tick();
-    if (a_button.press()) {
-      int chsn_slot = curr_key;
-      if (what_to_do_with_it == 0) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          add_credit_card_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          add_credit_card_from_serial(chsn_slot);
+  while (!continue_to_next) {
+    if (Serial.available()) {
+      char ser_char = Serial.read();
+      
+      // Cuộn lên
+      if (ser_char == 'w' || ser_char == '2') {
+         curr_key--;
+         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+         header_for_select_credit_card(what_to_do_with_it);
+         display_title_from_credit_card_without_integrity_verification();
       }
-      if (what_to_do_with_it == 1) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          edit_credit_card_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          edit_credit_card_from_serial(chsn_slot);
+      // Cuộn xuống
+      else if (ser_char == 's' || ser_char == '8') {
+         curr_key++;
+         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+         header_for_select_credit_card(what_to_do_with_it);
+         display_title_from_credit_card_without_integrity_verification();
       }
-      if (what_to_do_with_it == 2) {
-        delete_credit_card(chsn_slot);
+      // Xác nhận (Enter)
+      else if (ser_char == 'e' || ser_char == '5') {
+         int chsn_slot = curr_key;
+         if (what_to_do_with_it == 0) {
+           byte inptsrc = input_source_for_data_in_flash();
+           if (inptsrc == 1) add_credit_card_from_keyboard_and_encdr(chsn_slot);
+           if (inptsrc == 2) add_credit_card_from_serial(chsn_slot);
+         }
+         if (what_to_do_with_it == 1) {
+           byte inptsrc = input_source_for_data_in_flash();
+           if (inptsrc == 1) edit_credit_card_from_keyboard_and_encdr(chsn_slot);
+           if (inptsrc == 2) edit_credit_card_from_serial(chsn_slot);
+         }
+         if (what_to_do_with_it == 2) {
+           delete_credit_card(chsn_slot);
+         }
+         if (what_to_do_with_it == 3) {
+           view_credit_card(chsn_slot);
+         }
+         continue_to_next = true;
       }
-      if (what_to_do_with_it == 3) {
-        view_credit_card(chsn_slot);
+      // Hủy bỏ / Quay lại (Esc)
+      else if (ser_char == 'b' || ser_char == 'q') {
+         call_main_menu();
+         continue_to_next = true;
       }
-      continue_to_next = true;
-      break;
     }
-    delayMicroseconds(500);
-
-    b_button.tick();
-    if (b_button.press()) {
-      call_main_menu();
-      continue_to_next = true;
-      break;
-
-    }
-    delayMicroseconds(500);
-
-    if (keyboard.available()) {
-      // read the next key
-      c = keyboard.read();
-
-          if (c == 278)
-            curr_key++;
-
-          if (c == 277)
-            curr_key--;
-
-          if (curr_key < 1)
-            curr_key = MAX_NUM_OF_RECS;
-
-          if (curr_key > MAX_NUM_OF_RECS)
-            curr_key = 1;
-
-          if ((c & 0xFF) == 30) { // Enter
-            int chsn_slot = curr_key;
-            if (what_to_do_with_it == 0) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                add_credit_card_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                add_credit_card_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 1) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                edit_credit_card_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                edit_credit_card_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 2) {
-              delete_credit_card(chsn_slot);
-            }
-            if (what_to_do_with_it == 3) {
-              view_credit_card(chsn_slot);
-            }
-            continue_to_next = true;
-            break;
-          }
-
-          if ((c & 0xFF) == 27) {
-            call_main_menu();
-            continue_to_next = true;
-            break;
-          }
-          delay(200);
-          header_for_select_credit_card(what_to_do_with_it);
-          display_title_from_credit_card_without_integrity_verification();
-    }
-    delayMicroseconds(500);
+    delay(10); // Chống kẹt Watchdog Timer
   }
-  return;
 }
-
 void header_for_select_credit_card(byte what_to_do_with_it) {
   tft.fillScreen(0x0000);
   tft.setTextSize(2);
@@ -4444,50 +4084,7 @@ void get_title_for_credit_card_from_serial(int chsn_slot) {
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Title");
     Serial.println("\nPaste the title here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_cardholder_name_for_credit_card_from_serial(chsn_slot, Serial.readString());
     cont_to_next = true;
     break;
@@ -4500,50 +4097,7 @@ void get_cardholder_name_for_credit_card_from_serial(int chsn_slot, String enter
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Cardholder Name");
     Serial.println("\nPaste the cardholder name here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_card_number_for_credit_card_from_serial(chsn_slot, entered_title, Serial.readString());
     cont_to_next = true;
     break;
@@ -4556,50 +4110,7 @@ void get_card_number_for_credit_card_from_serial(int chsn_slot, String entered_t
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Card Number");
     Serial.println("\nPaste the card number here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_expiration_date_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, Serial.readString());
     cont_to_next = true;
     break;
@@ -4612,50 +4123,7 @@ void get_expiration_date_for_credit_card_from_serial(int chsn_slot, String enter
   while (cont_to_next == false) {
     disp_paste_smth_inscr("Expiration Date");
     Serial.println("\nPaste the expiration date here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_cvn_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, entered_card_number, Serial.readString());
     cont_to_next = true;
     break;
@@ -4668,50 +4136,7 @@ void get_cvn_for_credit_card_from_serial(int chsn_slot, String entered_title, St
   while (cont_to_next == false) {
     disp_paste_smth_inscr("CVN");
     Serial.println("\nPaste the CVN here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
+    while (!Serial.available()) { delay(10); }
     get_pin_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, Serial.readString());
     cont_to_next = true;
     break;
@@ -5184,35 +4609,31 @@ void view_credit_card(int chsn_slot) {
 // Functions for Notes (Below)
 
 void select_note(byte what_to_do_with_it) {
-  // 0 - Add note
-  // 1 - Edit note
-  // 2 - Delete note
-  // 3 - View note
   delay(200);
   curr_key = 1;
   header_for_select_note(what_to_do_with_it);
   display_title_from_note_without_integrity_verification();
+  
   bool continue_to_next = false;
-  while (continue_to_next == false) {
-    
-    // --- BỘ NHẬN LỆNH TỪ SERIAL MONITOR ---
+  while (!continue_to_next) {
     if (Serial.available()) {
       char ser_char = Serial.read();
-      // Gõ 'w' hoặc '2' để Tăng Slot (Cuộn lên)
+      
+      // Cuộn lên
       if (ser_char == 'w' || ser_char == '2') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_note(what_to_do_with_it);
-         display_title_from_note_without_integrity_verification();
-      }
-      // Gõ 's' hoặc '8' để Giảm Slot (Cuộn xuống)
-      else if (ser_char == 's' || ser_char == '8') {
          curr_key--;
          if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
          header_for_select_note(what_to_do_with_it);
          display_title_from_note_without_integrity_verification();
       }
-      // Gõ 'e' hoặc '5' để CHỌN SLOT NÀY (Enter)
+      // Cuộn xuống
+      else if (ser_char == 's' || ser_char == '8') {
+         curr_key++;
+         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+         header_for_select_note(what_to_do_with_it);
+         display_title_from_note_without_integrity_verification();
+      }
+      // Xác nhận (Enter)
       else if (ser_char == 'e' || ser_char == '5') {
          int chsn_slot = curr_key;
          if (what_to_do_with_it == 0) {
@@ -5232,131 +4653,15 @@ void select_note(byte what_to_do_with_it) {
            view_note(chsn_slot);
          }
          continue_to_next = true;
-         break;
       }
-      // Gõ 'b' hoặc 'q' để HỦY / QUAY LẠI (Esc)
+      // Hủy bỏ / Quay lại (Esc)
       else if (ser_char == 'b' || ser_char == 'q') {
          call_main_menu();
          continue_to_next = true;
-         break;
       }
     }
-    // ----------------------------------------
-
-    enc0.tick();
-
-    if (enc0.left()) {
-      curr_key--;
-    }
-
-    if (enc0.right()) {
-      curr_key++;
-    }
-
-    if (curr_key < 1)
-      curr_key = MAX_NUM_OF_RECS;
-
-    if (curr_key > MAX_NUM_OF_RECS)
-      curr_key = 1;
-
-    if (enc0.turn()) {
-      header_for_select_note(what_to_do_with_it);
-      display_title_from_note_without_integrity_verification();
-    }
-    delayMicroseconds(500);
-
-    a_button.tick();
-    if (a_button.press()) {
-      int chsn_slot = curr_key;
-      if (what_to_do_with_it == 0) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          add_note_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          add_note_from_serial(chsn_slot);
-      }
-      if (what_to_do_with_it == 1) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          edit_note_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          edit_note_from_serial(chsn_slot);
-      }
-      if (what_to_do_with_it == 2) {
-        delete_note(chsn_slot);
-      }
-      if (what_to_do_with_it == 3) {
-        view_note(chsn_slot);
-      }
-      continue_to_next = true;
-      break;
-    }
-    delayMicroseconds(500);
-
-    b_button.tick();
-    if (b_button.press()) {
-      call_main_menu();
-      continue_to_next = true;
-      break;
-
-    }
-    delayMicroseconds(500);
-
-    if (keyboard.available()) {
-      // read the next key
-      c = keyboard.read();
-
-
-          if (c == 278)
-            curr_key++;
-
-          if (c == 277)
-            curr_key--;
-
-          if (curr_key < 1)
-            curr_key = MAX_NUM_OF_RECS;
-
-          if (curr_key > MAX_NUM_OF_RECS)
-            curr_key = 1;
-
-          if ((c & 0xFF) == 30) { // Enter
-            int chsn_slot = curr_key;
-            if (what_to_do_with_it == 0) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                add_note_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                add_note_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 1) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                edit_note_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                edit_note_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 2) {
-              delete_note(chsn_slot);
-            }
-            if (what_to_do_with_it == 3) {
-              view_note(chsn_slot);
-            }
-            continue_to_next = true;
-            break;
-          }
-
-          if ((c & 0xFF) == 27) {
-            call_main_menu();
-            continue_to_next = true;
-            break;
-          }
-          delay(200);
-          header_for_select_note(what_to_do_with_it);
-          display_title_from_note_without_integrity_verification();
-    }
-    delayMicroseconds(500);
+    delay(10);
   }
-  return;
 }
 
 void header_for_select_note(byte what_to_do_with_it) {
@@ -5790,123 +5095,56 @@ void select_phone_number(byte what_to_do_with_it) {
   curr_key = 1;
   header_for_select_phone_number(what_to_do_with_it);
   display_title_from_phone_number_without_integrity_verification();
+  
   bool continue_to_next = false;
-  while (continue_to_next == false) {
-    enc0.tick();
-
-    if (enc0.left()) {
-      curr_key--;
-    }
-
-    if (enc0.right()) {
-      curr_key++;
-    }
-
-    if (curr_key < 1)
-      curr_key = MAX_NUM_OF_RECS;
-
-    if (curr_key > MAX_NUM_OF_RECS)
-      curr_key = 1;
-
-    if (enc0.turn()) {
-      header_for_select_phone_number(what_to_do_with_it);
-      display_title_from_phone_number_without_integrity_verification();
-    }
-    delayMicroseconds(500);
-
-    a_button.tick();
-    if (a_button.press()) {
-      int chsn_slot = curr_key;
-      if (what_to_do_with_it == 0) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          add_phone_number_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          add_phone_number_from_serial(chsn_slot);
+  while (!continue_to_next) {
+    if (Serial.available()) {
+      char ser_char = Serial.read();
+      
+      // Cuộn lên
+      if (ser_char == 'w' || ser_char == '2') {
+         curr_key--;
+         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+         header_for_select_phone_number(what_to_do_with_it);
+         display_title_from_phone_number_without_integrity_verification();
       }
-      if (what_to_do_with_it == 1) {
-        byte inptsrc = input_source_for_data_in_flash();
-        if (inptsrc == 1)
-          edit_phone_number_from_keyboard_and_encdr(chsn_slot);
-        if (inptsrc == 2)
-          edit_phone_number_from_serial(chsn_slot);
+      // Cuộn xuống
+      else if (ser_char == 's' || ser_char == '8') {
+         curr_key++;
+         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+         header_for_select_phone_number(what_to_do_with_it);
+         display_title_from_phone_number_without_integrity_verification();
       }
-      if (what_to_do_with_it == 2) {
-        delete_phone_number(chsn_slot);
+      // Xác nhận (Enter)
+      else if (ser_char == 'e' || ser_char == '5') {
+         int chsn_slot = curr_key;
+         if (what_to_do_with_it == 0) {
+           byte inptsrc = input_source_for_data_in_flash();
+           if (inptsrc == 1) add_phone_number_from_keyboard_and_encdr(chsn_slot);
+           if (inptsrc == 2) add_phone_number_from_serial(chsn_slot);
+         }
+         if (what_to_do_with_it == 1) {
+           byte inptsrc = input_source_for_data_in_flash();
+           if (inptsrc == 1) edit_phone_number_from_keyboard_and_encdr(chsn_slot);
+           if (inptsrc == 2) edit_phone_number_from_serial(chsn_slot);
+         }
+         if (what_to_do_with_it == 2) {
+           delete_phone_number(chsn_slot);
+         }
+         if (what_to_do_with_it == 3) {
+           view_phone_number(chsn_slot);
+         }
+         continue_to_next = true;
       }
-      if (what_to_do_with_it == 3) {
-        view_phone_number(chsn_slot);
+      // Hủy bỏ / Quay lại (Esc)
+      else if (ser_char == 'b' || ser_char == 'q') {
+         call_main_menu();
+         continue_to_next = true;
       }
-      continue_to_next = true;
-      break;
     }
-    delayMicroseconds(500);
-
-    b_button.tick();
-    if (b_button.press()) {
-      call_main_menu();
-      continue_to_next = true;
-      break;
-
-    }
-    delayMicroseconds(500);
-
-    if (keyboard.available()) {
-      // read the next key
-      c = keyboard.read();
-
-          if (c == 278)
-            curr_key++;
-
-          if (c == 277)
-            curr_key--;
-
-          if (curr_key < 1)
-            curr_key = MAX_NUM_OF_RECS;
-
-          if (curr_key > MAX_NUM_OF_RECS)
-            curr_key = 1;
-
-          if ((c & 0xFF) == 30) { // Enter
-            int chsn_slot = curr_key;
-            if (what_to_do_with_it == 0) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                add_phone_number_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                add_phone_number_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 1) {
-              byte inptsrc = input_source_for_data_in_flash();
-              if (inptsrc == 1)
-                edit_phone_number_from_keyboard_and_encdr(chsn_slot);
-              if (inptsrc == 2)
-                edit_phone_number_from_serial(chsn_slot);
-            }
-            if (what_to_do_with_it == 2) {
-              delete_phone_number(chsn_slot);
-            }
-            if (what_to_do_with_it == 3) {
-              view_phone_number(chsn_slot);
-            }
-            continue_to_next = true;
-            break;
-          }
-
-          if ((c & 0xFF) == 27) {
-            call_main_menu();
-            continue_to_next = true;
-            break;
-          }
-          delay(200);
-          header_for_select_phone_number(what_to_do_with_it);
-          display_title_from_phone_number_without_integrity_verification();
-    }
-    delayMicroseconds(500);
+    delay(10);
   }
-  return;
 }
-
 void header_for_select_phone_number(byte what_to_do_with_it) {
   tft.fillScreen(0x0000);
   tft.setTextSize(2);
@@ -6331,41 +5569,59 @@ void view_phone_number(int chsn_slot) {
 // Functions for Phone Number (Above)
 
 // Functions that work with files in LittleFS (Above)
+void lock_scr_without_rfid(){
+  chosen_lock_screen = esp_random() % 12;
+  display_lock_screen();
+  tft.setTextSize(2);
+  tft.setTextColor(0xf7de);
+  disp_centered_text_b_w("Press 'e' on Monitor", 209);
+  
+  mvng_bc.createSprite(306, 77);
+  mvng_bc.setColorDepth(16);
+  mvng_bc.fillSprite(TFT_TRANSPARENT);
+  k = 0;
+  bool break_the_loop = false;
+  
+  Serial.println("\n[KHOA] Thiet bi dang khoa. Go 'e' tren Monitor de Mo khoa.");
+  
+  while (!break_the_loop) {
+    display_letters_with_shifting_background();
+    k++;
+
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'e' || c == '5') {
+        break_the_loop = true; 
+      }
+    }
+    delay(10);
+  }
+  mvng_bc.deleteSprite();
+}
 
 void press_any_key_to_continue() {
+  // Xóa sạch dữ liệu thừa trong bộ đệm trước khi chờ phím mới
+  while (Serial.available() > 0) { Serial.read(); }
+  
   bool break_the_loop = false;
-  Serial.println("\n[HE THONG] Go phim bat ky tren Monitor va nhan Enter de tiep tuc...");
-  while (break_the_loop == false) {
+  Serial.println("\n[HE THONG] Go phim bat ky va nhan Enter de tiep tuc...");
+  while (!break_the_loop) {
     if (Serial.available()) {
-      Serial.readString(); // Đọc và xóa bộ đệm Serial
+      Serial.readString(); // Đọc sạch bộ đệm để thoát
       break_the_loop = true;
     }
-
-    a_button.tick();
-    if (a_button.press()) break_the_loop = true;
-    delayMicroseconds(400);
-
-    b_button.tick();
-    if (b_button.press()) break_the_loop = true;
-    delayMicroseconds(400);
-
-    if (keyboard.available()) {
-      c = keyboard.read();
-      break_the_loop = true;
-    }
-
-    delayMicroseconds(400);
-    encoder_button.tick();
-    if (encoder_button.press()) {
-      break_the_loop = true;
-    }
-    delayMicroseconds(400);
+    delay(10);
   }
 }
+
 void tab_or_encdr_bttn_to_print() {
+  // Xóa sạch dữ liệu thừa trong bộ đệm trước khi chờ phím mới
+  while (Serial.available() > 0) { Serial.read(); }
+  
   bool break_the_loop = false;
-  Serial.println("\n[XAC NHAN] Go 'y' va nhan Enter de xuat password ra Serial Monitor, go bat ky de Bo qua:");
-  while (break_the_loop == false) {
+  act = false;
+  Serial.println("\n[XAC NHAN] Go 'y' va nhan Enter de in ban ro ra Monitor, go ky tu khac de Bo qua:");
+  while (!break_the_loop) {
     if (Serial.available()) {
       String input = Serial.readStringUntil('\n');
       input.trim();
@@ -6374,35 +5630,9 @@ void tab_or_encdr_bttn_to_print() {
       }
       break_the_loop = true;
     }
-
-    a_button.tick();
-    if (a_button.press()) break_the_loop = true;
-    delayMicroseconds(400);
-
-    b_button.tick();
-    if (b_button.press()) break_the_loop = true;
-    delayMicroseconds(400);
-
-    if (keyboard.available()) {
-      c = keyboard.read();
-      if (c == 285) {
-        act = true;
-        break_the_loop = true;
-      } else {
-        break_the_loop = true;
-      }
-    }
-
-    delayMicroseconds(400);
-    encoder_button.tick();
-    if (encoder_button.press()) {
-      act = true;
-      break_the_loop = true;
-    }
-    delayMicroseconds(400);
+    delay(10);
   }
 }
-
 void continue_to_unlock() {
   if (read_file(SD, "/mpass").equals("-1"))
     set_pass();
@@ -6429,11 +5659,12 @@ void set_pass() {
   disp_centered_text("Setting Master Password", 65);
   disp_centered_text("Please wait", 85);
   disp_centered_text("for a while", 105);
-  //Serial.println(keyboard_input);
+  
   String bck = keyboard_input;
   modify_keys();
   keyboard_input = bck;
   set_psswd();
+  
   tft.fillScreen(0x0000);
   tft.setTextSize(2);
   for (int i = 0; i < 161; i++) {
@@ -6444,24 +5675,16 @@ void set_pass() {
   tft.setTextColor(0xffff);
   disp_centered_text("Master Password Set", 65);
   disp_centered_text("Successfully", 85);
-  disp_centered_text("Press Enter", 105);
-  disp_centered_text("or Quad-click", 125);
-  disp_centered_text("the encoder button", 145);
   disp_centered_text("to continue", 165);
+
+  Serial.println("\n[XAC NHAN] Go Enter tren Monitor de tiep tuc...");
   bool cont1 = true;
   while (cont1 == true) {
-    encoder_button.tick();
-    if (encoder_button.hasClicks(4))
+    if (Serial.available()) {
+      Serial.readString(); // Đọc và xóa bộ đệm
       cont1 = false;
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-          if ((c & 0xFF) == 30) // Enter
-            cont1 = false;
-
     }
-    delayMicroseconds(400);
+    delay(10);
   }
   call_main_menu();
   return;
@@ -6623,7 +5846,7 @@ void unlock_midbar() {
   disp_centered_text("Unlocking Midbar", 65);
   disp_centered_text("Please wait", 85);
   disp_centered_text("for a while", 105);
-  //Serial.println(keyboard_input);
+  
   String bck = keyboard_input;
   modify_keys();
   keyboard_input = bck;
@@ -6639,24 +5862,16 @@ void unlock_midbar() {
     tft.setTextSize(2);
     disp_centered_text("Midbar unlocked", 65);
     disp_centered_text("successfully", 85);
-    disp_centered_text("Press Enter", 105);
-    disp_centered_text("or Quad-click", 125);
-    disp_centered_text("the encoder button", 145);
     disp_centered_text("to continue", 165);
+
+    Serial.println("\n[XAC NHAN] Go Enter tren Monitor de tiep tuc...");
     bool cont1 = true;
     while (cont1 == true) {
-      encoder_button.tick();
-      if (encoder_button.hasClicks(4))
+      if (Serial.available()) {
+        Serial.readString(); // Đọc và xóa bộ đệm
         cont1 = false;
-      delayMicroseconds(400);
-      if (keyboard.available()) {
-        c = keyboard.read();
-
-            if ((c & 0xFF) == 30) // Enter
-              cont1 = false;
-
       }
-      delayMicroseconds(400);
+      delay(10);
     }
     call_main_menu();
     return;
@@ -6906,80 +6121,6 @@ void input_source_for_data_in_flash_menu(int curr_pos) {
   }
 }
 
-byte input_source_for_data_in_flash() {
-  byte inpsrc = 0;
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Choose Input Source", 10);
-  curr_key = 0;
-  input_source_for_data_in_flash_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  
-  while (cont_to_next == false) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      if (ser_char == 'w' || ser_char == '2') {
-        curr_key--;
-        if (curr_key < 0) curr_key = 1;
-        input_source_for_data_in_flash_menu(curr_key);
-      }
-      else if (ser_char == 's' || ser_char == '8') {
-        curr_key++;
-        if (curr_key > 1) curr_key = 0;
-        input_source_for_data_in_flash_menu(curr_key);
-      }
-      else if (ser_char == 'e' || ser_char == '5') {
-        inpsrc = (curr_key == 0) ? 1 : 2;
-        cont_to_next = true;
-        break;
-      }
-    }
-
-    enc0.tick();
-    if (enc0.left()) curr_key--;
-    if (enc0.right()) curr_key++;
-    if (curr_key < 0) curr_key = 1;
-    if (curr_key > 1) curr_key = 0;
-    if (enc0.turn()) {
-      input_source_for_data_in_flash_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      inpsrc = (curr_key == 0) ? 1 : 2;
-      cont_to_next = true;
-      break;
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-      break;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-      if (c == 279) curr_key--;
-      if (c == 280) curr_key++;
-      if (curr_key < 0) curr_key = 1;
-      if (curr_key > 1) curr_key = 0;
-      if ((c & 0xFF) == 30) {
-        inpsrc = (curr_key == 0) ? 1 : 2;
-        cont_to_next = true;
-        break;
-      }
-      if ((c & 0xFF) == 27) {
-        cont_to_next = true;
-        break;
-      }
-      input_source_for_data_in_flash_menu(curr_key);
-    }
-  }
-  return inpsrc;
-}
 
 void action_for_data_in_flash_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -7020,147 +6161,7 @@ void action_for_data_in_flash_menu(int curr_pos) {
   }
 }
 
-void action_for_data_in_flash(String menu_title, byte record_type) {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text(menu_title, 10);
-  curr_key = 0;
-  action_for_data_in_flash_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  
-  while (cont_to_next == false) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      if (ser_char == 'w' || ser_char == '2') {
-        curr_key--;
-        if (curr_key < 0) curr_key = 3;
-        action_for_data_in_flash_menu(curr_key);
-      }
-      else if (ser_char == 's' || ser_char == '8') {
-        curr_key++;
-        if (curr_key > 3) curr_key = 0;
-        action_for_data_in_flash_menu(curr_key);
-      }
-      else if (ser_char == 'e' || ser_char == '5') {
-        // Thực thi chức năng đã chọn
-        if (curr_key == 0) {
-          if (record_type == 0) select_login(0);
-          if (record_type == 1) select_credit_card(0);
-          if (record_type == 2) select_note(0);
-          if (record_type == 3) select_phone_number(0);
-        }
-        if (curr_key == 1) {
-          if (record_type == 0) select_login(1);
-          if (record_type == 1) select_credit_card(1);
-          if (record_type == 2) select_note(1);
-          if (record_type == 3) select_phone_number(1);
-        }
-        if (curr_key == 2) {
-          if (record_type == 0) select_login(2);
-          if (record_type == 1) select_credit_card(2);
-          if (record_type == 2) select_note(2);
-          if (record_type == 3) select_phone_number(2);
-        }
-        if (curr_key == 3) {
-          if (record_type == 0) select_login(3);
-          if (record_type == 1) select_credit_card(3);
-          if (record_type == 2) select_note(3);
-          if (record_type == 3) select_phone_number(3);
-        }
-        cont_to_next = true;
-        break;
-      }
-    }
 
-    enc0.tick();
-    if (enc0.left()) curr_key--;
-    if (enc0.right()) curr_key++;
-    if (curr_key < 0) curr_key = 3;
-    if (curr_key > 3) curr_key = 0;
-    if (enc0.turn()) {
-      action_for_data_in_flash_menu(curr_key);
-    }
-    
-    delayMicroseconds(400);
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        if (record_type == 0) select_login(0);
-        if (record_type == 1) select_credit_card(0);
-        if (record_type == 2) select_note(0);
-        if (record_type == 3) select_phone_number(0);
-      }
-      if (curr_key == 1) {
-        if (record_type == 0) select_login(1);
-        if (record_type == 1) select_credit_card(1);
-        if (record_type == 2) select_note(1);
-        if (record_type == 3) select_phone_number(1);
-      }
-      if (curr_key == 2) {
-        if (record_type == 0) select_login(2);
-        if (record_type == 1) select_credit_card(2);
-        if (record_type == 2) select_note(2);
-        if (record_type == 3) select_phone_number(2);
-      }
-      if (curr_key == 3) {
-        if (record_type == 0) select_login(3);
-        if (record_type == 1) select_credit_card(3);
-        if (record_type == 2) select_note(3);
-        if (record_type == 3) select_phone_number(3);
-      }
-      cont_to_next = true;
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-      if (c == 279) curr_key--;
-      if (c == 280) curr_key++;
-      if (curr_key < 0) curr_key = 3;
-      if (curr_key > 3) curr_key = 0;
-      if ((c & 0xFF) == 30) {
-        // Thực thi chức năng giống nút a_button
-        if (curr_key == 0) {
-          if (record_type == 0) select_login(0);
-          if (record_type == 1) select_credit_card(0);
-          if (record_type == 2) select_note(0);
-          if (record_type == 3) select_phone_number(0);
-        }
-        if (curr_key == 1) {
-          if (record_type == 0) select_login(1);
-          if (record_type == 1) select_credit_card(1);
-          if (record_type == 2) select_note(1);
-          if (record_type == 3) select_phone_number(1);
-        }
-        if (curr_key == 2) {
-          if (record_type == 0) select_login(2);
-          if (record_type == 1) select_credit_card(2);
-          if (record_type == 2) select_note(2);
-          if (record_type == 3) select_phone_number(2);
-        }
-        if (curr_key == 3) {
-          if (record_type == 0) select_login(3);
-          if (record_type == 1) select_credit_card(3);
-          if (record_type == 2) select_note(3);
-          if (record_type == 3) select_phone_number(3);
-        }
-        cont_to_next = true;
-      }
-      if ((c & 0xFF) == 27) {
-        cont_to_next = true;
-      }
-      action_for_data_in_flash_menu(curr_key);
-    }
-  }
-  call_main_menu();
-}
 void input_source_for_encr_algs_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
@@ -7178,140 +6179,6 @@ void input_source_for_encr_algs_menu(int curr_pos) {
   }
 }
 
-void input_source_for_encr_algs(byte record_type) {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Choose Input Source", 10);
-  curr_key = 0;
-  input_source_for_encr_algs_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 1;
-
-    if (curr_key > 1)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      input_source_for_encr_algs_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        if (record_type == 0)
-          encr_TDES_AES_BLF_Serp();
-        if (record_type == 1)
-          encr_blwfsh_aes_serpent_aes();
-        if (record_type == 2)
-          encr_aes_serpent_aes();
-        if (record_type == 3)
-          encr_blowfish_serpent();
-        if (record_type == 4)
-          encr_aes_serpent();
-        if (record_type == 5)
-          encr_serpent_only();
-        if (record_type == 6)
-          encr_tdes_only();
-        cont_to_next = true;
-      }
-
-      if (curr_key == 1) {
-        if (record_type == 0)
-          encr_TDES_AES_BLF_Serp_from_Serial();
-        if (record_type == 1)
-          encr_blwfsh_aes_serpent_aes_from_Serial();
-        if (record_type == 2)
-          encr_aes_serpent_aes_from_Serial();
-        if (record_type == 3)
-          encr_blowfish_serpent_from_Serial();
-        if (record_type == 4)
-          encr_aes_serpent_from_Serial();
-        if (record_type == 5)
-          encr_serpent_only_from_Serial();
-        if (record_type == 6)
-          encr_tdes_only_from_Serial();
-        cont_to_next = true;
-      }
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 1;
-
-          if (curr_key > 1)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-
-            if (curr_key == 0) {
-              if (record_type == 0)
-                encr_TDES_AES_BLF_Serp();
-              if (record_type == 1)
-                encr_blwfsh_aes_serpent_aes();
-              if (record_type == 2)
-                encr_aes_serpent_aes();
-              if (record_type == 3)
-                encr_blowfish_serpent();
-              if (record_type == 4)
-                encr_aes_serpent();
-              if (record_type == 5)
-                encr_serpent_only();
-              if (record_type == 6)
-                encr_tdes_only();
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              if (record_type == 0)
-                encr_TDES_AES_BLF_Serp_from_Serial();
-              if (record_type == 1)
-                encr_blwfsh_aes_serpent_aes_from_Serial();
-              if (record_type == 2)
-                encr_aes_serpent_aes_from_Serial();
-              if (record_type == 3)
-                encr_blowfish_serpent_from_Serial();
-              if (record_type == 4)
-                encr_aes_serpent_from_Serial();
-              if (record_type == 5)
-                encr_serpent_only_from_Serial();
-              if (record_type == 6)
-                encr_tdes_only_from_Serial();
-              cont_to_next = true;
-            }
-            
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          input_source_for_encr_algs_menu(curr_key);
-
-    }
-  }
-  call_main_menu();
-}
 
 void what_to_do_with_encr_alg_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -7330,86 +6197,6 @@ void what_to_do_with_encr_alg_menu(int curr_pos) {
   }
 }
 
-void what_to_do_with_encr_alg(String menu_title, byte record_type) {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text(menu_title, 10);
-  curr_key = 0;
-  what_to_do_with_encr_alg_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 1;
-
-    if (curr_key > 1)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      what_to_do_with_encr_alg_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        input_source_for_encr_algs(record_type);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 1) {
-        where_to_print_plaintext(record_type);
-        cont_to_next = true;
-      }
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 1;
-
-          if (curr_key > 1)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-            if (curr_key == 0) {
-              input_source_for_encr_algs(record_type);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              where_to_print_plaintext(record_type);
-              cont_to_next = true;
-            }
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          what_to_do_with_encr_alg_menu(curr_key);
-
-    }
-  }
-  call_main_menu();
-}
 
 void where_to_print_plaintext_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -7428,139 +6215,6 @@ void where_to_print_plaintext_menu(int curr_pos) {
   }
 }
 
-void where_to_print_plaintext(byte record_type) {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Where to print plaintext?", 10);
-  curr_key = 0;
-  where_to_print_plaintext_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 1;
-
-    if (curr_key > 1)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      where_to_print_plaintext_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        if (record_type == 0)
-          decr_TDES_AES_BLF_Serp(true);
-        if (record_type == 1)
-          decr_blwfsh_aes_serpent_aes(true);
-        if (record_type == 2)
-          decr_aes_serpent_aes(true);
-        if (record_type == 3)
-          decr_blowfish_serpent(true);
-        if (record_type == 4)
-          decr_aes_serpent(true);
-        if (record_type == 5)
-          decr_serpent_only(true);
-        if (record_type == 6)
-          decr_tdes_only(true);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 1) {
-        if (record_type == 0)
-          decr_TDES_AES_BLF_Serp(false);
-        if (record_type == 1)
-          decr_blwfsh_aes_serpent_aes(false);
-        if (record_type == 2)
-          decr_aes_serpent_aes(false);
-        if (record_type == 3)
-          decr_blowfish_serpent(false);
-        if (record_type == 4)
-          decr_aes_serpent(false);
-        if (record_type == 5)
-          decr_serpent_only(false);
-        if (record_type == 6)
-          decr_tdes_only(false);
-        cont_to_next = true;
-      }
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 1;
-
-          if (curr_key > 1)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-
-            if (curr_key == 0) {
-              if (record_type == 0)
-                decr_TDES_AES_BLF_Serp(true);
-              if (record_type == 1)
-                decr_blwfsh_aes_serpent_aes(true);
-              if (record_type == 2)
-                decr_aes_serpent_aes(true);
-              if (record_type == 3)
-                decr_blowfish_serpent(true);
-              if (record_type == 4)
-                decr_aes_serpent(true);
-              if (record_type == 5)
-                decr_serpent_only(true);
-              if (record_type == 6)
-                decr_tdes_only(true);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              if (record_type == 0)
-                decr_TDES_AES_BLF_Serp(false);
-              if (record_type == 1)
-                decr_blwfsh_aes_serpent_aes(false);
-              if (record_type == 2)
-                decr_aes_serpent_aes(false);
-              if (record_type == 3)
-                decr_blowfish_serpent(false);
-              if (record_type == 4)
-                decr_aes_serpent(false);
-              if (record_type == 5)
-                decr_serpent_only(false);
-              if (record_type == 6)
-                decr_tdes_only(false);
-              cont_to_next = true;
-            }
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          where_to_print_plaintext_menu(curr_key);
-
-    }
-  }
-  call_main_menu();
-}
 
 void encryption_algorithms_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -7649,136 +6303,6 @@ void encryption_algorithms_menu(int curr_pos) {
   }
 }
 
-void encryption_algorithms() {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Encryption Algorithms", 10);
-  curr_key = 0;
-  encryption_algorithms_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 6;
-
-    if (curr_key > 6)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      encryption_algorithms_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        what_to_do_with_encr_alg("3DES+AES+Blfish+Serp CBC", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 1) {
-        what_to_do_with_encr_alg("Blowfish+AES+Serp+AES", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 2) {
-        what_to_do_with_encr_alg("AES+Serpent+AES", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 3) {
-        what_to_do_with_encr_alg("Blowfish+Serpent", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 4) {
-        what_to_do_with_encr_alg("AES+Serpent", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 5) {
-        what_to_do_with_encr_alg("Serpent", curr_key);
-        cont_to_next = true;
-      }
-
-      if (curr_key == 6) {
-        what_to_do_with_encr_alg("Triple DES", curr_key);
-        cont_to_next = true;
-      }
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 6;
-
-          if (curr_key > 6)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-            if (curr_key == 0) {
-              what_to_do_with_encr_alg("3DES+AES+Blfish+Serp CBC", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              what_to_do_with_encr_alg("Blowfish+AES+Serp+AES", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 2) {
-              what_to_do_with_encr_alg("AES+Serpent+AES", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 3) {
-              what_to_do_with_encr_alg("Blowfish+Serpent", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 4) {
-              what_to_do_with_encr_alg("AES+Serpent", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 5) {
-              what_to_do_with_encr_alg("Serpent", curr_key);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 6) {
-              what_to_do_with_encr_alg("Triple DES", curr_key);
-              cont_to_next = true;
-            }
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          encryption_algorithms_menu(curr_key);
-
-    }
-  }
-  call_main_menu();
-}
 
 void hash_functions_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -7797,88 +6321,185 @@ void hash_functions_menu(int curr_pos) {
   }
 }
 
-void hash_functions() {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Hash Functions", 10);
-  curr_key = 0;
-  hash_functions_menu(curr_key);
-  disp_button_designation();
+byte input_source_for_data_in_flash() {
+  byte inpsrc = 0;
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Choose Input Source", 10);
+  curr_key = 0; input_source_for_data_in_flash_menu(curr_key);
   bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 1;
-
-    if (curr_key > 1)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      hash_functions_menu(curr_key);
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; input_source_for_data_in_flash_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; input_source_for_data_in_flash_menu(curr_key); }
+      else if (c == 'e' || c == '5') { inpsrc = (curr_key == 0) ? 1 : 2; cont_to_next = true; }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
     }
+    delay(10);
+  }
+  return inpsrc;
+}
 
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        hash_string_with_sha(false);
+void action_for_data_in_flash(String menu_title, byte record_type) {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text(menu_title, 10);
+  curr_key = 0; action_for_data_in_flash_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 3; action_for_data_in_flash_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 3) curr_key = 0; action_for_data_in_flash_menu(curr_key); }
+      else if (c == 'e' || c == '5') {
+        if (curr_key == 0) { if(record_type==0) select_login(0); if(record_type==1) select_credit_card(0); if(record_type==2) select_note(0); if(record_type==3) select_phone_number(0); }
+        if (curr_key == 1) { if(record_type==0) select_login(1); if(record_type==1) select_credit_card(1); if(record_type==2) select_note(1); if(record_type==3) select_phone_number(1); }
+        if (curr_key == 2) { if(record_type==0) select_login(2); if(record_type==1) select_credit_card(2); if(record_type==2) select_note(2); if(record_type==3) select_phone_number(2); }
+        if (curr_key == 3) { if(record_type==0) select_login(3); if(record_type==1) select_credit_card(3); if(record_type==2) select_note(3); if(record_type==3) select_phone_number(3); }
         cont_to_next = true;
       }
-
-      if (curr_key == 1) {
-        hash_string_with_sha(true);
-        cont_to_next = true;
-      }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
     }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 1;
-
-          if (curr_key > 1)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-            if (curr_key == 0) {
-              hash_string_with_sha(false);
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              hash_string_with_sha(true);
-              cont_to_next = true;
-            }
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          hash_functions_menu(curr_key);
-
-    }
+    delay(10);
   }
   call_main_menu();
 }
 
+void input_source_for_encr_algs(byte record_type) {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Choose Input Source", 10);
+  curr_key = 0; input_source_for_encr_algs_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; input_source_for_encr_algs_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; input_source_for_encr_algs_menu(curr_key); }
+      else if (c == 'e' || c == '5') {
+        if (curr_key == 0) {
+          if (record_type == 0) encr_TDES_AES_BLF_Serp(); if (record_type == 1) encr_blwfsh_aes_serpent_aes();
+          if (record_type == 2) encr_aes_serpent_aes();   if (record_type == 3) encr_blowfish_serpent();
+          if (record_type == 4) encr_aes_serpent();       if (record_type == 5) encr_serpent_only();
+          if (record_type == 6) encr_tdes_only();
+        }
+        if (curr_key == 1) {
+          if (record_type == 0) encr_TDES_AES_BLF_Serp_from_Serial(); if (record_type == 1) encr_blwfsh_aes_serpent_aes_from_Serial();
+          if (record_type == 2) encr_aes_serpent_aes_from_Serial();   if (record_type == 3) encr_blowfish_serpent_from_Serial();
+          if (record_type == 4) encr_aes_serpent_from_Serial();       if (record_type == 5) encr_serpent_only_from_Serial();
+          if (record_type == 6) encr_tdes_only_from_Serial();
+        }
+        cont_to_next = true;
+      }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+}
+
+void what_to_do_with_encr_alg(String menu_title, byte record_type) {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text(menu_title, 10);
+  curr_key = 0; what_to_do_with_encr_alg_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; what_to_do_with_encr_alg_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; what_to_do_with_encr_alg_menu(curr_key); }
+      else if (c == 'e' || c == '5') { if(curr_key==0) input_source_for_encr_algs(record_type); if(curr_key==1) where_to_print_plaintext(record_type); cont_to_next = true; }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+  call_main_menu();
+}
+
+void where_to_print_plaintext(byte record_type) {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Where to print plaintext?", 10);
+  curr_key = 0; where_to_print_plaintext_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; where_to_print_plaintext_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; where_to_print_plaintext_menu(curr_key); }
+      else if (c == 'e' || c == '5') {
+        bool print_disp = (curr_key == 0);
+        if (record_type == 0) decr_TDES_AES_BLF_Serp(print_disp); if (record_type == 1) decr_blwfsh_aes_serpent_aes(print_disp);
+        if (record_type == 2) decr_aes_serpent_aes(print_disp);   if (record_type == 3) decr_blowfish_serpent(print_disp);
+        if (record_type == 4) decr_aes_serpent(print_disp);       if (record_type == 5) decr_serpent_only(print_disp);
+        if (record_type == 6) decr_tdes_only(print_disp);
+        cont_to_next = true;
+      }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+  call_main_menu();
+}
+
+void encryption_algorithms() {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Encryption Algorithms", 10);
+  curr_key = 0; encryption_algorithms_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 6; encryption_algorithms_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 6) curr_key = 0; encryption_algorithms_menu(curr_key); }
+      else if (c == 'e' || c == '5') {
+        if(curr_key==0) what_to_do_with_encr_alg("3DES+AES+Blfish+Serp CBC", curr_key);
+        if(curr_key==1) what_to_do_with_encr_alg("Blowfish+AES+Serp+AES", curr_key);
+        if(curr_key==2) what_to_do_with_encr_alg("AES+Serpent+AES", curr_key);
+        if(curr_key==3) what_to_do_with_encr_alg("Blowfish+Serpent", curr_key);
+        if(curr_key==4) what_to_do_with_encr_alg("AES+Serpent", curr_key);
+        if(curr_key==5) what_to_do_with_encr_alg("Serpent", curr_key);
+        if(curr_key==6) what_to_do_with_encr_alg("Triple DES", curr_key);
+        cont_to_next = true;
+      }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+  call_main_menu();
+}
+
+void hash_functions() {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Hash Functions", 10);
+  curr_key = 0; hash_functions_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; hash_functions_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; hash_functions_menu(curr_key); }
+      else if (c == 'e' || c == '5') { hash_string_with_sha(curr_key == 1); cont_to_next = true; }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+  call_main_menu();
+}
+
+void other_options() {
+  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
+  disp_centered_text("Other Options", 10);
+  curr_key = 0; other_options_menu(curr_key);
+  bool cont_to_next = false;
+  while (!cont_to_next) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; other_options_menu(curr_key); }
+      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; other_options_menu(curr_key); }
+      else if (c == 'e' || c == '5') { if(curr_key==0) send_password_to_receiver(); if(curr_key==1) Factory_Reset(); cont_to_next = true; }
+      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    }
+    delay(10);
+  }
+  call_main_menu();
+}
 void other_options_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
@@ -7896,138 +6517,33 @@ void other_options_menu(int curr_pos) {
   }
 }
 
-void other_options() {
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  tft.setTextColor(current_inact_clr);
-  disp_centered_text("Other Options", 10);
-  curr_key = 0;
-  other_options_menu(curr_key);
-  disp_button_designation();
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    enc0.tick();
-    if (enc0.left())
-      curr_key--;
-    if (enc0.right())
-      curr_key++;
-
-    if (curr_key < 0)
-      curr_key = 1;
-
-    if (curr_key > 1)
-      curr_key = 0;
-
-    if (enc0.turn()) {
-      other_options_menu(curr_key);
-    }
-
-    a_button.tick();
-    if (a_button.press()) {
-      if (curr_key == 0) {
-        send_password_to_receiver();
-        cont_to_next = true;
-      }
-
-      if (curr_key == 1) {
-        Factory_Reset();
-        cont_to_next = true;
-      }
-    }
-
-    b_button.tick();
-    if (b_button.press()) {
-      cont_to_next = true;
-    }
-
-    delayMicroseconds(400);
-    if (keyboard.available()) {
-      c = keyboard.read();
-
-
-          if (c == 279)
-            curr_key--;
-
-          if (c == 280)
-            curr_key++;
-
-          if (curr_key < 0)
-            curr_key = 1;
-
-          if (curr_key > 1)
-            curr_key = 0;
-
-          if ((c & 0xFF) == 30) {
-            if (curr_key == 0) {
-              send_password_to_receiver();
-              cont_to_next = true;
-            }
-
-            if (curr_key == 1) {
-              Factory_Reset();
-              cont_to_next = true;
-            }
-          }
-          if ((c & 0xFF) == 27) {
-            cont_to_next = true;
-          }
-          other_options_menu(curr_key);
-
-    }
-  }
-  call_main_menu();
-}
 
 // Menu (Above)
 
 void Factory_Reset() {
   tft.fillScreen(0x0000);
   tft.setTextColor(five_six_five_red_color);
-  disp_centered_text("Factory Reset", 10);
-  delay(500);
-  disp_centered_text("Attention!!!", 50);
-  tft.setTextColor(0xffff);
-  delay(500);
-  disp_centered_text("All your data", 90);
-  delay(500);
-  disp_centered_text("will be lost!", 110);
-  delay(500);
+  disp_centered_text("Factory Reset", 10); delay(500);
+  disp_centered_text("Attention!!!", 50); tft.setTextColor(0xffff); delay(500);
+  disp_centered_text("All your data", 90); delay(500);
+  disp_centered_text("will be lost!", 110); delay(500);
   tft.setTextColor(0x1557);
   disp_centered_text("Are you sure you want", 150);
   disp_centered_text("to continue?", 170);
   tft.setTextSize(1);
-  delay(5000);
-  disp_button_designation_for_del();
-  finish_input = false;
-  while (finish_input == false) {
-    a_button.tick();
-    if (a_button.press()) {
-      perform_factory_reset();
-      finish_input = true;
+  
+  Serial.println("\n[CANH BAO] Go 'y' va nhan Enter de Factory Reset, go ky tu khac de Huy:");
+  bool break_the_loop = false;
+  while (!break_the_loop) {
+    if (Serial.available()) {
+      String input = Serial.readStringUntil('\n');
+      input.trim();
+      if (input == "y" || input == "Y") { 
+        perform_factory_reset(); 
+      }
+      break_the_loop = true;
     }
-    delayMicroseconds(400);
-
-    b_button.tick();
-    if (b_button.press()) {
-      finish_input = true;
-    }
-    delayMicroseconds(400);
-
-    if (keyboard.available()) {
-      // read the next key
-      c = keyboard.read();
-          bool cll_chck_bnds = true;
-          if ((c & 0xFF) == 30) {
-            perform_factory_reset();
-            finish_input = true;
-          }
-
-          if ((c & 0xFF) == 27) {
-            finish_input = true;
-          }
-
-    }
-    delayMicroseconds(400);
+    delay(10);
   }
   clear_variables();
   call_main_menu();
@@ -9737,10 +8253,6 @@ void serp_for_pp(char res[], bool snd){
 }
 
 // Password Projection (Above)
-
-int chosen_lock_screen;
-unsigned int k;
-
 void display_letters_with_shifting_background(){
 
   if (chosen_lock_screen == 0){
@@ -9960,98 +8472,40 @@ void display_lock_screen(){
   }
 }
 
-void lock_scr_without_rfid(){
-  chosen_lock_screen = esp_random() % 12;
-  display_lock_screen();
-  tft.setTextSize(2);
-  tft.setTextColor(0xf7de);
-  
-  // Đổi text hiển thị cho phù hợp với phím bấm Monitor
-  disp_centered_text_b_w("Press 'e' to Unlock", 209);
-  
-  mvng_bc.createSprite(306, 77);
-  mvng_bc.setColorDepth(16);
-  mvng_bc.fillSprite(TFT_TRANSPARENT);
-  k = 0;
-  bool break_the_loop = false;
-  while (break_the_loop == false) {
-    
-    display_letters_with_shifting_background();
-    k++;
-
-    // --- BỘ NHẬN LỆNH TỪ SERIAL MONITOR ---
-    if (Serial.available()) {
-      char c = Serial.read();
-      if (c == 'e' || c == '5' || c == '\n') {
-        break_the_loop = true; // Mở khóa!
-      }
-    }
-
-    a_button.tick();
-    if (a_button.press())
-      break_the_loop = true;
-    delayMicroseconds(400);
-
-    b_button.tick();
-    if (b_button.press())
-      break_the_loop = true;
-    delayMicroseconds(400);
-
-    if (keyboard.available()) {
-      c = keyboard.read();
-      if (c) {
-        break_the_loop = true;
-      }
-    }
-
-    delayMicroseconds(400);
-    encoder_button.tick();
-    if (encoder_button.press()) {
-      break_the_loop = true;
-    }
-    delayMicroseconds(400);
-  }
-  mvng_bc.deleteSprite();
-}
 void setup(void) {
   tft.begin();
   tft.fillScreen(0x0000);
   tft.setRotation(1);
   
-  // Khởi tạo bàn phím ảo Serial
   Serial.begin(115200);
+  Serial.println("\n--- MIDBAR ESP32 (SERIAL FORK) ---");
 
-  // Khởi tạo bộ nhớ nội bộ (Thay cho SD)
   if(!SPIFFS.begin(true)){
     Serial.println("Loi SPIFFS!");
   }
 
-  sd_mnt = true; // Ép hệ thống tin rằng đã có thẻ SD
-  
-  m = 2; // AES-256
+  sd_mnt = true; 
+  m = 2; 
   clb_m = 4;
 
-  // Khởi động vào Màn hình Khóa -> Mở khóa -> Vào Main Menu
   lock_scr_without_rfid();
   call_main_menu(); 
 }
+
 void loop() {
   if (Serial.available()) {
     char c = Serial.read();
     
-    // Gõ phím 'w' hoặc '2' để cuộn lên
     if (c == 'w' || c == '2') {
       curr_key--;
       if (curr_key < 0) curr_key = 6;
       main_menu(curr_key);
     }
-    // Gõ phím 's' hoặc '8' để cuộn xuống
     else if (c == 's' || c == '8') {
       curr_key++;
       if (curr_key > 6) curr_key = 0;
       main_menu(curr_key);
     }
-    // Gõ phím 'e' hoặc '5' để CHỌN (Enter)
     else if (c == 'e' || c == '5') {
       if (curr_key == 0) action_for_data_in_flash("Logins Menu", curr_key);
       if (curr_key == 1) action_for_data_in_flash("Credit Cards Menu", curr_key);
@@ -10061,11 +8515,10 @@ void loop() {
       if (curr_key == 5) hash_functions();
       if (curr_key == 6) other_options();
     }
-    // Gõ phím 'b' hoặc 'q' để QUAY LẠI MÀN HÌNH KHÓA (Lock thiết bị)
     else if (c == 'b' || c == 'q') {
-      lock_scr_without_rfid(); // Gọi lại màn hình khóa
-      call_main_menu();        // Sau khi mở khóa thành công thì load lại Menu
+      lock_scr_without_rfid(); 
+      call_main_menu();        
     }
   }
-  delay(50);
+  delay(10); 
 }
