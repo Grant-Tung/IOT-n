@@ -13,24 +13,21 @@
 #include <SPIFFS.h>     
 #define SD SPIFFS
 #include <TFT_eSPI.h>
-TFT_eSPI tft = TFT_eSPI();       
-TFT_eSprite mvng_bc = TFT_eSprite(&tft);
-#define MAX_NUM_OF_RECS 500
-// --- KHỞI TẠO PHẦN CỨNG THẬT ---
-EncButton2 < EB_ENC > enc0(INPUT_PULLUP, 25, 26);
-EncButton2 < EB_BTN > encoder_button(INPUT_PULLUP, 27);
-volatile int encoderPos = 0;
-volatile bool encoderClick = false;
-// Khai báo nút Chọn (A) và Trở về (B)
-// Lưu ý: Tui đổi chân 34 thành 25 vì chân 34 của ESP32 không có điện trở kéo nội bộ (Pull-up)
-EncButton2 < EB_BTN > a_button(INPUT_PULLUP, 25);
-EncButton2 < EB_BTN > b_button(INPUT_PULLUP, 32);
-
 // Bàn phím PS/2 cũ không xài thì để "Dummy" cho khỏi báo lỗi đỏ
 #define PS2_BREAK 0
 struct DummyKeyboard { bool available(){ return false; } int read(){ return 0; } };
 DummyKeyboard keyboard;
 // --------------------------------
+TFT_eSPI tft = TFT_eSPI();       
+TFT_eSprite mvng_bc = TFT_eSprite(&tft);
+#define MAX_NUM_OF_RECS 500
+// sửa đầu vào chân cắm
+EncButton2 < EB_ENC > enc0(INPUT_PULLUP, 25, 26);
+EncButton2 < EB_BTN > encoder_button(INPUT_PULLUP, 27);
+volatile int encoderPos = 0;
+volatile bool encoderClick = false;
+EncButton2 < EB_BTN > a_button(INPUT_PULLUP, 25);
+EncButton2 < EB_BTN > b_button(INPUT_PULLUP, 32);
 DES des;
 Blowfish blowfish;
 uint16_t code;
@@ -54,10 +51,9 @@ bool sd_mnt;
 
 uint8_t broadcastAddress[] = {0x94, 0xE6, 0x86, 0x37, 0xFF, 0xD8}; 
 esp_now_peer_info_t peerInfo;
-int chosen_lock_screen; // Thêm biến này vào
+int chosen_lock_screen;
 unsigned int k;
-// ---> GIỮ NGUYÊN TOÀN BỘ PHẦN KHAI BÁO KEY Ở DƯỚI (read_cards, AES_key, v.v...)
-// Keys (Below)
+// Keys 
 
 byte read_cards[16] = {
 0xc1,0x3c,0xeb,0xf6,0xf3,0xa4,0x90,0xfd,
@@ -221,85 +217,8 @@ void incr_AES_key() {
   }
 }
 void incr_Blwfsh_key() {
-  if (Blwfsh_key[0] == 255) {
-    Blwfsh_key[0] = 0;
-    if (Blwfsh_key[1] == 255) {
-      Blwfsh_key[1] = 0;
-      if (Blwfsh_key[2] == 255) {
-        Blwfsh_key[2] = 0;
-        if (Blwfsh_key[3] == 255) {
-          Blwfsh_key[3] = 0;
-          if (Blwfsh_key[4] == 255) {
-            Blwfsh_key[4] = 0;
-            if (Blwfsh_key[5] == 255) {
-              Blwfsh_key[5] = 0;
-              if (Blwfsh_key[6] == 255) {
-                Blwfsh_key[6] = 0;
-                if (Blwfsh_key[7] == 255) {
-                  Blwfsh_key[7] = 0;
-                  if (Blwfsh_key[8] == 255) {
-                    Blwfsh_key[8] = 0;
-                    if (Blwfsh_key[9] == 255) {
-                      Blwfsh_key[9] = 0;
-                      if (Blwfsh_key[10] == 255) {
-                        Blwfsh_key[10] = 0;
-                        if (Blwfsh_key[11] == 255) {
-                          Blwfsh_key[11] = 0;
-                          if (Blwfsh_key[12] == 255) {
-                            Blwfsh_key[12] = 0;
-                            if (Blwfsh_key[13] == 255) {
-                              Blwfsh_key[13] = 0;
-                              if (Blwfsh_key[14] == 255) {
-                                Blwfsh_key[14] = 0;
-                                if (Blwfsh_key[15] == 255) {
-                                  Blwfsh_key[15] = 0;
-                                } else {
-                                  Blwfsh_key[15]++;
-                                }
-                              } else {
-                                Blwfsh_key[14]++;
-                              }
-                            } else {
-                              Blwfsh_key[13]++;
-                            }
-                          } else {
-                            Blwfsh_key[12]++;
-                          }
-                        } else {
-                          Blwfsh_key[11]++;
-                        }
-                      } else {
-                        Blwfsh_key[10]++;
-                      }
-                    } else {
-                      Blwfsh_key[9]++;
-                    }
-                  } else {
-                    Blwfsh_key[8]++;
-                  }
-                } else {
-                  Blwfsh_key[7]++;
-                }
-              } else {
-                Blwfsh_key[6]++;
-              }
-            } else {
-              Blwfsh_key[5]++;
-            }
-          } else {
-            Blwfsh_key[4]++;
-          }
-        } else {
-          Blwfsh_key[3]++;
-        }
-      } else {
-        Blwfsh_key[2]++;
-      }
-    } else {
-      Blwfsh_key[1]++;
-    }
-  } else {
-    Blwfsh_key[0]++;
+  for (int i = 0; i < 16; i++) { // Khóa Blowfish của bạn đang dùng 16 bytes
+    if (++Blwfsh_key[i] != 0) break;
   }
 }
 
@@ -3006,19 +2925,21 @@ void encdr_and_keyb_input() {
 
 void star_encdr_and_keyb_input() {
   finish_input = false;
-  keyboard_input = ""; 
+  keyboard_input = "";
   curr_key = 65; 
   disp_stars();
+  
   Serial.println("\n[BAO MAT] Nhap Mat khau bang Serial hoac Numb xoay...");
   
   while (!finish_input) {
-    // 1. SERIAL
+    // 1. NHẬN SERIAL ĐỒNG THỜI
     if (Serial.available()) {
-      String input = Serial.readStringUntil('\n'); 
+      String input = Serial.readStringUntil('\n');
       input.trim();
       if (input.length() > 0) {
-        if (input == "ESC") act = false;
-        else {
+        if (input == "ESC") {
+          act = false;
+        } else {
           keyboard_input = input;
           act = true;
         }
@@ -3028,7 +2949,7 @@ void star_encdr_and_keyb_input() {
       }
     }
     
-    // 2. ENCODER
+    // 2. NHẬN ENCODER QUAY
     enc0.tick();
     if (enc0.left()) {
       curr_key--;
@@ -3041,33 +2962,36 @@ void star_encdr_and_keyb_input() {
       disp_stars();
     }
     
+    // 3. NHẬN CLICK/HOLD TỪ NÚT ENCODER
     encoder_button.tick();
     if (encoder_button.click()) { 
-      if (curr_key == 127) {
+      if (curr_key == 127) { // Chức năng [DEL]
         if (keyboard_input.length() > 0) {
           keyboard_input.remove(keyboard_input.length() - 1);
         }
-      } else if (curr_key == 128) { 
+      } else if (curr_key == 128) { // Chức năng [OK]
         act = true;
         finish_input = true;
-      } else { 
+      } else { // Ký tự thường
         keyboard_input += (char)curr_key;
       }
       disp_stars();
     }
     
-    if (encoder_button.hold()) {
+    if (encoder_button.hold()) { // Nhấn giữ để Hủy
       act = false;
       finish_input = true;
     }
     
+    // 4. NÚT VẬT LÝ DỰ PHÒNG
     b_button.tick();
     if (b_button.click()) {
       act = false;
       finish_input = true;
     }
     
-    delay(10);
+    // Chống đứng ESP32 WDT
+    vTaskDelay(10);
   }
 }
 // Functions that work with files in LittleFS (Below)
@@ -3117,39 +3041,52 @@ void delete_file(fs::FS &fs, String filename){
 
 void select_login(byte what_to_do_with_it) {
   delay(200);
-  header_for_select_login(what_to_do_with_it);
-  display_title_from_login_without_integrity_verification();
+  curr_key = 1; // FIX LỖI ĐỒNG BỘ: Ép luôn bắt đầu hiển thị từ Slot 1
+  int last_key = -1; // FIX LỖI ĐƠ/NHÁY: Chỉ vẽ màn hình khi vị trí thực sự thay đổi
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    // SỬ DỤNG HÀM NÀY ĐỂ NHẬN TÍN HIỆU TỪ NÚM XOAY HOẶC SERIAL
-    int action = get_nav_action(); 
+    if (curr_key != last_key) { // Tránh vẽ lại TFT liên tục gây nghẽn chip
+       header_for_select_login(what_to_do_with_it);
+       display_title_from_login_without_integrity_verification();
+       last_key = curr_key;
+    }
+
+    int action = get_nav_action();
     
     if (action == 1) { // Lên
        curr_key--;
        if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-       header_for_select_login(what_to_do_with_it);
-       display_title_from_login_without_integrity_verification();
     }
     else if (action == 2) { // Xuống
        curr_key++;
        if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-       header_for_select_login(what_to_do_with_it);
-       display_title_from_login_without_integrity_verification();
     }
-    else if (action == 3) { // CHỌN (Click nút encoder hoặc bấm 'e')
-       // Gọi logic xử lý dựa trên what_to_do_with_it (0: Add, 1: Edit, 2: Del, 3: View)
-       // Ví dụ cho Login:
-       if (what_to_do_with_it == 0) add_login_from_keyboard_and_encdr(curr_key); // Bạn cần viết lại hàm add cho khớp
-       if (what_to_do_with_it == 3) view_login(curr_key);
-       // ... Thêm các case khác tương tự
+    else if (action == 3) { // Chọn
+       int chsn_slot = curr_key;
+       if (what_to_do_with_it == 0) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) add_login_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) add_login_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 1) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) edit_login_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) edit_login_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 2) {
+         delete_login(chsn_slot);
+       }
+       else if (what_to_do_with_it == 3) {
+         view_login(chsn_slot);
+       }
        continue_to_next = true;
     }
-    else if (action == 4) { // TRỞ VỀ (Hold nút encoder hoặc bấm 'b')
+    else if (action == 4) { // Quay lại
        call_main_menu();
        continue_to_next = true;
     }
-    delay(10); // KHÔNG ĐƯỢC XÓA DÒNG NÀY
+    delay(10); 
   }
 }
 void header_for_select_login(byte what_to_do_with_it) {
@@ -3594,11 +3531,17 @@ void add_credit_card_from_keyboard_and_encdr(int chsn_slot) {
 void select_credit_card(byte what_to_do_with_it) {
   delay(200);
   curr_key = 1;
+  int last_key = -1;
   header_for_select_credit_card(what_to_do_with_it);
   display_title_from_credit_card_without_integrity_verification();
   
   bool continue_to_next = false;
   while (!continue_to_next) {
+    if (curr_key != last_key) { // Tránh vẽ lại TFT liên tục gây nghẽn chip
+       header_for_select_login(what_to_do_with_it);
+       display_title_from_login_without_integrity_verification();
+       last_key = curr_key;
+    }
     // SỬ DỤNG HÀM HYBRID CỦA BẠN ĐỂ VỪA NHẬN SERIAL VỪA NHẬN NÚM XOAY
     int action = get_nav_action(); 
     
@@ -4014,60 +3957,56 @@ void view_credit_card(int chsn_slot) {
 
 void select_note(byte what_to_do_with_it) {
   delay(200);
-  curr_key = 1;
-  header_for_select_note(what_to_do_with_it);
-  display_title_from_note_without_integrity_verification();
+  curr_key = 1;        // Luôn bắt đầu từ Slot 1 để không bị lỗi lưu vào Slot 0
+  int last_key = -1;   // Biến chặn vẽ màn hình liên tục
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      
-      // Cuộn lên
-      if (ser_char == 'w' || ser_char == '2') {
-         curr_key--;
-         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-         header_for_select_note(what_to_do_with_it);
-         display_title_from_note_without_integrity_verification();
-      }
-      // Cuộn xuống
-      else if (ser_char == 's' || ser_char == '8') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_note(what_to_do_with_it);
-         display_title_from_note_without_integrity_verification();
-      }
-      // Xác nhận (Enter)
-      else if (ser_char == 'e' || ser_char == '5') {
-         int chsn_slot = curr_key;
-         if (what_to_do_with_it == 0) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) add_note_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) add_note_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 1) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) edit_note_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) edit_note_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 2) {
-           delete_note(chsn_slot);
-         }
-         if (what_to_do_with_it == 3) {
-           view_note(chsn_slot);
-         }
-         continue_to_next = true;
-      }
-      // Hủy bỏ / Quay lại (Esc)
-      else if (ser_char == 'b' || ser_char == 'q') {
-         call_main_menu();
-         continue_to_next = true;
-      }
+    // 1. Chỉ vẽ lại TFT khi vị trí thực sự thay đổi
+    if (curr_key != last_key) {
+       header_for_select_note(what_to_do_with_it);
+       display_title_from_note_without_integrity_verification();
+       last_key = curr_key;
     }
-    delay(10);
+
+    // 2. Nhận tín hiệu tổng hợp từ Serial + Núm xoay + Nút bấm
+    int action = get_nav_action();
+    
+    if (action == 1) { // Lên
+       curr_key--;
+       if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+    }
+    else if (action == 2) { // Xuống
+       curr_key++;
+       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+    }
+    else if (action == 3) { // Chọn
+       int chsn_slot = curr_key;
+       if (what_to_do_with_it == 0) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) add_note_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) add_note_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 1) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) edit_note_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) edit_note_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 2) {
+         delete_note(chsn_slot);
+       }
+       else if (what_to_do_with_it == 3) {
+         view_note(chsn_slot);
+       }
+       continue_to_next = true;
+    }
+    else if (action == 4) { // Trở về / Hủy
+       call_main_menu();
+       continue_to_next = true;
+    }
+    delay(10); // Chống kẹt Watchdog của ESP32
   }
 }
-
 void header_for_select_note(byte what_to_do_with_it) {
   tft.fillScreen(0x0000);
   tft.setTextSize(2);
@@ -4496,57 +4435,54 @@ void view_note(int chsn_slot) {
 
 void select_phone_number(byte what_to_do_with_it) {
   delay(200);
-  curr_key = 1;
-  header_for_select_phone_number(what_to_do_with_it);
-  display_title_from_phone_number_without_integrity_verification();
+  curr_key = 1;        // Luôn bắt đầu từ Slot 1
+  int last_key = -1;   // Biến chặn vẽ màn hình liên tục
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      
-      // Cuộn lên
-      if (ser_char == 'w' || ser_char == '2') {
-         curr_key--;
-         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-         header_for_select_phone_number(what_to_do_with_it);
-         display_title_from_phone_number_without_integrity_verification();
-      }
-      // Cuộn xuống
-      else if (ser_char == 's' || ser_char == '8') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_phone_number(what_to_do_with_it);
-         display_title_from_phone_number_without_integrity_verification();
-      }
-      // Xác nhận (Enter)
-      else if (ser_char == 'e' || ser_char == '5') {
-         int chsn_slot = curr_key;
-         if (what_to_do_with_it == 0) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) add_phone_number_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) add_phone_number_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 1) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) edit_phone_number_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) edit_phone_number_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 2) {
-           delete_phone_number(chsn_slot);
-         }
-         if (what_to_do_with_it == 3) {
-           view_phone_number(chsn_slot);
-         }
-         continue_to_next = true;
-      }
-      // Hủy bỏ / Quay lại (Esc)
-      else if (ser_char == 'b' || ser_char == 'q') {
-         call_main_menu();
-         continue_to_next = true;
-      }
+    // 1. Chỉ vẽ lại TFT khi vị trí thực sự thay đổi
+    if (curr_key != last_key) {
+       header_for_select_phone_number(what_to_do_with_it);
+       display_title_from_phone_number_without_integrity_verification();
+       last_key = curr_key;
     }
-    delay(10);
+
+    // 2. Nhận tín hiệu tổng hợp từ Serial + Núm xoay + Nút bấm
+    int action = get_nav_action();
+    
+    if (action == 1) { // Lên
+       curr_key--;
+       if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+    }
+    else if (action == 2) { // Xuống
+       curr_key++;
+       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+    }
+    else if (action == 3) { // Chọn
+       int chsn_slot = curr_key;
+       if (what_to_do_with_it == 0) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) add_phone_number_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) add_phone_number_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 1) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) edit_phone_number_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) edit_phone_number_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 2) {
+         delete_phone_number(chsn_slot);
+       }
+       else if (what_to_do_with_it == 3) {
+         view_phone_number(chsn_slot);
+       }
+       continue_to_next = true;
+    }
+    else if (action == 4) { // Trở về / Hủy
+       call_main_menu();
+       continue_to_next = true;
+    }
+    delay(10); // Chống kẹt Watchdog của ESP32
   }
 }
 void header_for_select_phone_number(byte what_to_do_with_it) {
@@ -5035,339 +4971,6 @@ void tab_or_encdr_bttn_to_print() {
     }
     delay(10);
   }
-}
-void continue_to_unlock() {
-  if (read_file(SD, "/mpass").equals("-1"))
-    set_pass();
-  else
-    unlock_midbar();
-  return;
-}
-
-void set_pass() {
-  clear_variables();
-  tft.fillScreen(0x0000);
-  tft.setTextColor(0xffff);
-  tft.setTextSize(1);
-  set_stuff_for_input("Set Master Password");
-  encdr_and_keyb_input();
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  for (int i = 0; i < 161; i++) {
-    for (int j = 0; j < 40; j++) {
-      tft.drawPixel(i + 79, j + 10, Beirut[i][j]);
-    }
-  }
-  tft.setTextColor(0xffff);
-  disp_centered_text("Setting Master Password", 65);
-  disp_centered_text("Please wait", 85);
-  disp_centered_text("for a while", 105);
-  
-  String bck = keyboard_input;
-  modify_keys();
-  keyboard_input = bck;
-  set_psswd();
-  
-  tft.fillScreen(0x0000);
-  tft.setTextSize(2);
-  for (int i = 0; i < 161; i++) {
-    for (int j = 0; j < 40; j++) {
-      tft.drawPixel(i + 79, j + 10, Beirut[i][j]);
-    }
-  }
-  tft.setTextColor(0xffff);
-  disp_centered_text("Master Password Set", 65);
-  disp_centered_text("Successfully", 85);
-  disp_centered_text("to continue", 165);
-
-  Serial.println("\n[XAC NHAN] Go Enter tren Monitor de tiep tuc...");
-  bool cont1 = true;
-  while (cont1 == true) {
-    if (Serial.available()) {
-      Serial.readString(); // Đọc và xóa bộ đệm
-      cont1 = false;
-    }
-    delay(10);
-  }
-  call_main_menu();
-  return;
-}
-
-void set_psswd() {
-  int str_len = keyboard_input.length() + 1;
-  char input_arr[str_len];
-  keyboard_input.toCharArray(input_arr, str_len);
-  std::string str = "";
-  if (str_len > 1) {
-    for (int i = 0; i < str_len - 1; i++) {
-      str += input_arr[i];
-    }
-  }
-  String h = sha512(str).c_str();
-  for (int i = 0; i < numofkincr * 2; i++) {
-    int str_len1 = h.length() + 1;
-    char input_arr1[str_len1];
-    h.toCharArray(input_arr1, str_len1);
-    std::string str1 = "";
-    if (str_len1 > 1) {
-      for (int i = 0; i < str_len1 - 1; i++) {
-        str1 += input_arr1[i];
-      }
-    }
-    h = sha512(str1).c_str();
-    delay(1);
-    if (i == ((numofkincr * 2)/3)){
-      for (int j = 0; j < 8; j++){
-        h += String(read_cards[j], HEX);
-      }
-    }
-    if (i == numofkincr){
-      for (int j = 0; j < 8; j++){
-        h += String(read_cards[j + 8], HEX);
-      }
-    }
-    if (i == ((numofkincr * 3)/2)){
-      for (int j = 0; j < 16; j++){
-        h += String(read_cards[j], HEX);
-      }
-    }
-  }
-  //Serial.println();
-  //Serial.println(h);
-  back_keys();
-  dec_st = "";
-  encr_hash_for_tdes_aes_blf_srp(h);
-  rest_keys();
-  //Serial.println(dec_st);
-
-  write_to_file_with_overwrite(SD, "/mpass", dec_st);
-}
-
-void modify_keys() {
-  keyboard_input += kderalgs;
-  int str_len = keyboard_input.length() + 1;
-  char input_arr[str_len];
-  keyboard_input.toCharArray(input_arr, str_len);
-  std::string str = "";
-  if (str_len > 1) {
-    for (int i = 0; i < str_len - 1; i++) {
-      str += input_arr[i];
-    }
-  }
-  String h = sha512(str).c_str();
-  for (int i = 0; i < numofkincr; i++) {
-    int str_len1 = h.length() + 1;
-    char input_arr1[str_len1];
-    h.toCharArray(input_arr1, str_len1);
-    std::string str1 = "";
-    if (str_len1 > 1) {
-      for (int i = 0; i < str_len1 - 1; i++) {
-        str1 += input_arr1[i];
-      }
-    }
-    h = sha512(str1).c_str();
-    delay(1);
-    if (i == numofkincr/2){
-      for (int j = 0; j < 16; j++){
-        h += String(read_cards[j], HEX);
-      }
-    }
-  }
-  //Serial.println(h);
-  int h_len = h.length() + 1;
-  char h_array[h_len];
-  h.toCharArray(h_array, h_len);
-  byte res[64];
-  for (int i = 0; i < 128; i += 2) {
-    if (i == 0) {
-      if (h_array[i] != 0 && h_array[i + 1] != 0)
-        res[i] = 16 * getNum(h_array[i]) + getNum(h_array[i + 1]);
-      if (h_array[i] != 0 && h_array[i + 1] == 0)
-        res[i] = 16 * getNum(h_array[i]);
-      if (h_array[i] == 0 && h_array[i + 1] != 0)
-        res[i] = getNum(h_array[i + 1]);
-      if (h_array[i] == 0 && h_array[i + 1] == 0)
-        res[i] = 0;
-    } else {
-      if (h_array[i] != 0 && h_array[i + 1] != 0)
-        res[i / 2] = 16 * getNum(h_array[i]) + getNum(h_array[i + 1]);
-      if (h_array[i] != 0 && h_array[i + 1] == 0)
-        res[i / 2] = 16 * getNum(h_array[i]);
-      if (h_array[i] == 0 && h_array[i + 1] != 0)
-        res[i / 2] = getNum(h_array[i + 1]);
-      if (h_array[i] == 0 && h_array[i + 1] == 0)
-        res[i / 2] = 0;
-    }
-  }
-  for (int i = 0; i < 13; i++) {
-    hmackey[i] = res[i];
-  }
-  des_key[9] = res[13];
-  des_key[16] = (unsigned char) res[31];
-  des_key[17] = (unsigned char) res[32];
-  des_key[18] = (unsigned char) res[33];
-  serp_key[12] = int(res[34]);
-  serp_key[14] = int(res[35]);
-  for (int i = 0; i < 9; i++) {
-    Blwfsh_key[i] = (unsigned char) res[i + 14];
-  }
-  for (int i = 0; i < 3; i++) {
-    des_key[i] = (unsigned char) res[i + 23];
-  }
-  for (int i = 0; i < 5; i++) {
-    hmackey[i + 13] = int(res[i + 26]);
-  }
-  for (int i = 0; i < 10; i++) {
-    AES_key[i] = int(res[i + 36]);
-  }
-  for (int i = 0; i < 9; i++) {
-    serp_key[i] = int(res[i + 46]);
-  }
-  for (int i = 0; i < 4; i++) {
-    hmackey[i + 18] = res[i + 55];
-    des_key[i + 3] = (unsigned char) res[i + 59];
-  }
-  for (int i = 0; i < 5; i++) {
-    second_AES_key[i] = ((int(res[i + 31]) * int(res[i + 11])) + int(res[50])) % 256;
-  }
-}
-
-void unlock_midbar() {
-  clear_variables();
-  tft.fillScreen(0x0000);
-  tft.setTextColor(0xffff);
-  tft.setTextSize(2);
-  set_stuff_for_input("Enter Master Password");
-  star_encdr_and_keyb_input();
-  tft.fillScreen(0x0000);
-  for (int i = 0; i < 125; i++) {
-    for (int j = 0; j < 40; j++) {
-      tft.drawPixel(i + 97, j + 10, Beirut[i + 193][j]);
-    }
-  }
-  tft.setTextSize(2);
-  disp_centered_text("Unlocking Midbar", 65);
-  disp_centered_text("Please wait", 85);
-  disp_centered_text("for a while", 105);
-  
-  String bck = keyboard_input;
-  modify_keys();
-  keyboard_input = bck;
-  bool next_act = hash_psswd();
-  clear_variables();
-  tft.fillScreen(0x0000);
-  for (int i = 0; i < 125; i++) {
-    for (int j = 0; j < 40; j++) {
-      tft.drawPixel(i + 97, j + 10, Beirut[i + 193][j]);
-    }
-  }
-  if (next_act == true) {
-    tft.setTextSize(2);
-    disp_centered_text("Midbar unlocked", 65);
-    disp_centered_text("successfully", 85);
-    disp_centered_text("to continue", 165);
-
-    Serial.println("\n[XAC NHAN] Go Enter tren Monitor de tiep tuc...");
-    bool cont1 = true;
-    while (cont1 == true) {
-      if (Serial.available()) {
-        Serial.readString(); // Đọc và xóa bộ đệm
-        cont1 = false;
-      }
-      delay(10);
-    }
-    call_main_menu();
-    return;
-  } else {
-    tft.setTextSize(2);
-    tft.setTextColor(five_six_five_red_color);
-    disp_centered_text("Wrong Password!", 65);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Please reboot", 100);
-    disp_centered_text("the device", 120);
-    disp_centered_text("and try again", 140);
-    for (;;)
-      delay(1000);
-  }
-}
-
-bool hash_psswd() {
-  int str_len = keyboard_input.length() + 1;
-  char input_arr[str_len];
-  keyboard_input.toCharArray(input_arr, str_len);
-  std::string str = "";
-  if (str_len > 1) {
-    for (int i = 0; i < str_len - 1; i++) {
-      str += input_arr[i];
-    }
-  }
-  String h = sha512(str).c_str();
-  for (int i = 0; i < numofkincr * 2; i++) {
-    int str_len1 = h.length() + 1;
-    char input_arr1[str_len1];
-    h.toCharArray(input_arr1, str_len1);
-    std::string str1 = "";
-    if (str_len1 > 1) {
-      for (int i = 0; i < str_len1 - 1; i++) {
-        str1 += input_arr1[i];
-      }
-    }
-    h = sha512(str1).c_str();
-    delay(1);
-    if (i == ((numofkincr * 2)/3)){
-      for (int j = 0; j < 8; j++){
-        h += String(read_cards[j], HEX);
-      }
-    }
-    if (i == numofkincr){
-      for (int j = 0; j < 8; j++){
-        h += String(read_cards[j + 8], HEX);
-      }
-    }
-    if (i == ((numofkincr * 3)/2)){
-      for (int j = 0; j < 16; j++){
-        h += String(read_cards[j], HEX);
-      }
-    }
-  }
-  //Serial.println();
-  //Serial.println(h);
-
-  SHA256HMAC hmac(hmackey, sizeof(hmackey));
-  int h_len1 = h.length() + 1;
-  char h_arr[h_len1];
-  h.toCharArray(h_arr, h_len1);
-  hmac.doUpdate(h_arr);
-  byte authCode[SHA256HMAC_SIZE];
-  hmac.doFinal(authCode);
-  int p = 0;
-  char hmacchar[30];
-  for (int i = 0; i < 30; i++) {
-    hmacchar[i] = char(authCode[i]);
-  }
-
-  String res_hash;
-  for (int i = 0; i < 30; i++) {
-    if (hmacchar[i] < 0x10)
-      res_hash += "0";
-    res_hash += String(hmacchar[i], HEX);
-  }
-  /*
-    Serial.println();
-
-      for (int i = 0; i < 30; i++) {
-        if (hmacchar[i] < 16)
-          Serial.print("0");
-        Serial.print(hmacchar[i], HEX);
-      }
-    Serial.println();
-  */
-  back_keys();
-  clear_variables();
-  //Serial.println(read_file(SD, "/mpass"));
-  decrypt_tag_with_TDES_AES_Blowfish_Serp(read_file(SD, "/mpass"));
-  //Serial.println(dec_tag);
-  return dec_tag.equals(res_hash);
 }
 
 void disp_centered_text(String text, int h) {
@@ -7168,8 +6771,321 @@ void decr_tdes_only(bool print_plt_on_disp_or_serial) {
   }
 }
 
-// Functions for encryption and decryption (Above)
+// func set master pass-----------------------------------
+void continue_to_unlock() {
+  // Đọc file hash từ SPIFFS, nếu chưa có (file trả về "-1") thì cài mới, nếu có thì hỏi mật khẩu
+  if (read_file(SD, "/mpass").equals("-1")) {
+    set_pass();
+  } else {
+    unlock_midbar();
+  }
+}
 
+void set_pass() {
+  clear_variables();
+  tft.fillScreen(0x0000);
+  tft.setTextColor(0xffff);
+  tft.setTextSize(1);
+  set_stuff_for_input("Set Master Password");
+  star_encdr_and_keyb_input(); 
+  
+  tft.fillScreen(0x0000);
+  tft.setTextSize(2);
+  
+  // Tối ưu UX/WDT: Chèn vTaskDelay(1) sau mỗi cột i
+  for (int i = 0; i < 161; i++) {
+    for (int j = 0; j < 40; j++) {
+      tft.drawPixel(i + 79, j + 10, Beirut[i][j]);
+    }
+    vTaskDelay(1); 
+  }
+  
+  tft.setTextColor(0xffff);
+  disp_centered_text("Setting", 65);
+  disp_centered_text("Master Password", 85);
+  disp_centered_text("Please wait", 105);
+  disp_centered_text("for a while", 125);
+  
+  String bck = keyboard_input;
+  modify_keys();
+  keyboard_input = bck;
+  set_psswd();
+  
+  tft.fillScreen(0x0000);
+  tft.setTextSize(2);
+  for (int i = 0; i < 161; i++) {
+    for (int j = 0; j < 40; j++) {
+      tft.drawPixel(i + 79, j + 10, Beirut[i][j]);
+    }
+    vTaskDelay(1);
+  }
+  
+  tft.setTextColor(0xffff);
+  disp_centered_text("Master Password Set", 65);
+  disp_centered_text("Successfully", 85);
+  disp_centered_text("to continue", 165);
+  
+  Serial.println("\n[XAC NHAN] Go Enter hoac Nhan Encoder de tiep tuc...");
+  bool cont1 = true;
+  while (cont1) {
+    if (Serial.available()) {
+      Serial.readString(); // Dọn dẹp buffer rác
+      cont1 = false;
+    }
+    enc0.tick();
+    encoder_button.tick();
+    if (encoder_button.click()) {
+      cont1 = false;
+    }
+    vTaskDelay(10);
+  }
+  call_main_menu();
+}
+
+void unlock_midbar() {
+  clear_variables();
+  tft.fillScreen(0x0000);
+  tft.setTextColor(0xffff);
+  tft.setTextSize(2);
+  set_stuff_for_input("Enter Master Password");
+  star_encdr_and_keyb_input();
+  
+  tft.fillScreen(0x0000);
+  for (int i = 0; i < 125; i++) {
+    for (int j = 0; j < 40; j++) {
+      tft.drawPixel(i + 97, j + 10, Beirut[i + 193][j]);
+    }
+    vTaskDelay(1);
+  }
+  tft.setTextSize(2);
+  disp_centered_text("Unlocking Midbar", 65);
+  disp_centered_text("Please wait", 85);
+  disp_centered_text("for a while", 105);
+  
+  String bck = keyboard_input;
+  modify_keys();
+  keyboard_input = bck;
+  bool next_act = hash_psswd();
+  clear_variables();
+  
+  tft.fillScreen(0x0000);
+  for (int i = 0; i < 125; i++) {
+    for (int j = 0; j < 40; j++) {
+      tft.drawPixel(i + 97, j + 10, Beirut[i + 193][j]);
+    }
+    vTaskDelay(1);
+  }
+  
+  if (next_act) {
+    tft.setTextSize(2);
+    disp_centered_text("Midbar unlocked", 65);
+    disp_centered_text("successfully", 85);
+    disp_centered_text("to continue", 165);
+    
+    Serial.println("\n[XAC NHAN] Go Enter hoac click Encoder de tiep tuc...");
+    bool cont1 = true;
+    while (cont1) {
+      if (Serial.available()) {
+        Serial.readString();
+        cont1 = false;
+      }
+      encoder_button.tick();
+      if (encoder_button.click()) cont1 = false;
+      vTaskDelay(10);
+    }
+    call_main_menu();
+  } else {
+    tft.setTextSize(2);
+    tft.setTextColor(five_six_five_red_color);
+    disp_centered_text("Wrong Password!", 65);
+    tft.setTextColor(0xffff);
+    disp_centered_text("Please reboot", 100);
+    disp_centered_text("the device", 120);
+    disp_centered_text("and try again", 140);
+    for (;;) vTaskDelay(1000);
+  }
+}
+
+void set_psswd() {
+  int str_len = keyboard_input.length() + 1;
+  char input_arr[str_len];
+  keyboard_input.toCharArray(input_arr, str_len);
+  std::string str = "";
+  if (str_len > 1) {
+    for (int i = 0; i < str_len - 1; i++) {
+      str += input_arr[i];
+    }
+  }
+  String h = sha512(str).c_str();
+  
+  for (int i = 0; i < numofkincr * 2; i++) {
+    int str_len1 = h.length() + 1;
+    char input_arr1[str_len1];
+    h.toCharArray(input_arr1, str_len1);
+    std::string str1 = "";
+    if (str_len1 > 1) {
+      // Đổi biến k để tránh shadow logic i của vòng for ngoài
+      for (int k = 0; k < str_len1 - 1; k++) {
+        str1 += input_arr1[k];
+      }
+    }
+    h = sha512(str1).c_str();
+    vTaskDelay(1); // Hàm băm 522 vòng, chèn vTaskDelay(1) để giữ chip ổn định
+    
+    if (i == ((numofkincr * 2) / 3)) {
+      for (int j = 0; j < 8; j++) h += String(read_cards[j], HEX);
+    }
+    if (i == numofkincr) {
+      for (int j = 0; j < 8; j++) h += String(read_cards[j + 8], HEX);
+    }
+    if (i == ((numofkincr * 3) / 2)) {
+      for (int j = 0; j < 16; j++) h += String(read_cards[j], HEX);
+    }
+  }
+  
+  back_keys();
+  dec_st = "";
+  encr_hash_for_tdes_aes_blf_srp(h);
+  rest_keys();
+  write_to_file_with_overwrite(SD, "/mpass", dec_st);
+}
+
+bool hash_psswd() {
+  int str_len = keyboard_input.length() + 1;
+  char input_arr[str_len];
+  keyboard_input.toCharArray(input_arr, str_len);
+  std::string str = "";
+  if (str_len > 1) {
+    for (int i = 0; i < str_len - 1; i++) {
+      str += input_arr[i];
+    }
+  }
+  String h = sha512(str).c_str();
+  
+  for (int i = 0; i < numofkincr * 2; i++) {
+    int str_len1 = h.length() + 1;
+    char input_arr1[str_len1];
+    h.toCharArray(input_arr1, str_len1);
+    std::string str1 = "";
+    if (str_len1 > 1) {
+      for (int k = 0; k < str_len1 - 1; k++) {
+        str1 += input_arr1[k];
+      }
+    }
+    h = sha512(str1).c_str();
+    vTaskDelay(1); // Chống WDT
+    
+    if (i == ((numofkincr * 2) / 3)) {
+      for (int j = 0; j < 8; j++) h += String(read_cards[j], HEX);
+    }
+    if (i == numofkincr) {
+      for (int j = 0; j < 8; j++) h += String(read_cards[j + 8], HEX);
+    }
+    if (i == ((numofkincr * 3) / 2)) {
+      for (int j = 0; j < 16; j++) h += String(read_cards[j], HEX);
+    }
+  }
+  
+  SHA256HMAC hmac(hmackey, sizeof(hmackey));
+  int h_len1 = h.length() + 1;
+  char h_arr[h_len1];
+  h.toCharArray(h_arr, h_len1);
+  hmac.doUpdate(h_arr);
+  byte authCode[SHA256HMAC_SIZE];
+  hmac.doFinal(authCode);
+  
+  char hmacchar[30];
+  for (int i = 0; i < 30; i++) {
+    hmacchar[i] = char(authCode[i]);
+  }
+  
+  String res_hash;
+  for (int i = 0; i < 30; i++) {
+    if (hmacchar[i] < 0x10) res_hash += "0";
+    res_hash += String(hmacchar[i], HEX);
+  }
+  
+  back_keys();
+  clear_variables();
+  decrypt_tag_with_TDES_AES_Blowfish_Serp(read_file(SD, "/mpass"));
+  bool match = dec_tag.equals(res_hash);
+  return match;
+}
+
+void modify_keys() {
+  keyboard_input += kderalgs;
+  int str_len = keyboard_input.length() + 1;
+  char input_arr[str_len];
+  keyboard_input.toCharArray(input_arr, str_len);
+  std::string str = "";
+  if (str_len > 1) {
+    for (int i = 0; i < str_len - 1; i++) {
+      str += input_arr[i];
+    }
+  }
+  String h = sha512(str).c_str();
+  
+  for (int i = 0; i < numofkincr; i++) {
+    int str_len1 = h.length() + 1;
+    char input_arr1[str_len1];
+    h.toCharArray(input_arr1, str_len1);
+    std::string str1 = "";
+    if (str_len1 > 1) {
+      for (int k = 0; k < str_len1 - 1; k++) {
+        str1 += input_arr1[k];
+      }
+    }
+    h = sha512(str1).c_str();
+    vTaskDelay(1); // Chống WDT
+    
+    if (i == numofkincr / 2) {
+      for (int j = 0; j < 16; j++) {
+        h += String(read_cards[j], HEX);
+      }
+    }
+  }
+  
+  int h_len = h.length() + 1;
+  char h_array[h_len];
+  h.toCharArray(h_array, h_len);
+  byte res[64];
+  
+  for (int i = 0; i < 128; i += 2) {
+    if (i == 0) {
+      if (h_array[i] != 0 && h_array[i + 1] != 0) res[i] = 16 * getNum(h_array[i]) + getNum(h_array[i + 1]);
+      if (h_array[i] != 0 && h_array[i + 1] == 0) res[i] = 16 * getNum(h_array[i]);
+      if (h_array[i] == 0 && h_array[i + 1] != 0) res[i] = getNum(h_array[i + 1]);
+      if (h_array[i] == 0 && h_array[i + 1] == 0) res[i] = 0;
+    } else {
+      if (h_array[i] != 0 && h_array[i + 1] != 0) res[i / 2] = 16 * getNum(h_array[i]) + getNum(h_array[i + 1]);
+      if (h_array[i] != 0 && h_array[i + 1] == 0) res[i / 2] = 16 * getNum(h_array[i]);
+      if (h_array[i] == 0 && h_array[i + 1] != 0) res[i / 2] = getNum(h_array[i + 1]);
+      if (h_array[i] == 0 && h_array[i + 1] == 0) res[i / 2] = 0;
+    }
+  }
+  
+  for (int i = 0; i < 13; i++) hmackey[i] = res[i];
+  des_key[9] = res[13];
+  des_key[16] = (unsigned char)res[31];
+  des_key[17] = (unsigned char)res[32];
+  des_key[18] = (unsigned char)res[33];
+  serp_key[12] = int(res[34]);
+  serp_key[14] = int(res[35]);
+  
+  for (int i = 0; i < 9; i++) Blwfsh_key[i] = (unsigned char)res[i + 14];
+  for (int i = 0; i < 3; i++) des_key[i] = (unsigned char)res[i + 23];
+  for (int i = 0; i < 5; i++) hmackey[i + 13] = int(res[i + 26]);
+  for (int i = 0; i < 10; i++) AES_key[i] = int(res[i + 36]);
+  for (int i = 0; i < 9; i++) serp_key[i] = int(res[i + 46]);
+  for (int i = 0; i < 4; i++) {
+    hmackey[i + 18] = res[i + 55];
+    des_key[i + 3] = (unsigned char)res[i + 59];
+  }
+  for (int i = 0; i < 5; i++) {
+    second_AES_key[i] = ((int(res[i + 31]) * int(res[i + 11])) + int(res[50])) % 256;
+  }
+}
+// Func Master pass ------------------------------------------------------------------------------ nhớ là ko sửa đc phải reset , mật khẩu luôn đặt là tungtung
 // Password Projection (Below)
 
 char temp_st_for_pp[16];
@@ -7895,8 +7811,10 @@ void setup(void) {
   attachInterrupt(25, encoderISR, CHANGE);
   attachInterrupt(26, encoderISR, CHANGE);
   attachInterrupt(27, encoderISR, CHANGE);
-  lock_scr_without_rfid();
-  call_main_menu(); 
+  // done test chạy thật, xóa cái này để bypass nha AN 
+  //lock_scr_without_rfid();
+  //call_main_menu(); 
+  continue_to_unlock();
 }
 // TRẢ VỀ ACTION: 1 (Lên), 2 (Xuống), 3 (Chọn), 4 (Quay lại), 0 (Không làm gì)
 int get_nav_action() {
