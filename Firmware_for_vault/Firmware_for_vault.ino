@@ -3117,35 +3117,39 @@ void delete_file(fs::FS &fs, String filename){
 
 void select_login(byte what_to_do_with_it) {
   delay(200);
-  int lastEncoderPos = encoderPos; // Lưu vị trí cũ
-  
   header_for_select_login(what_to_do_with_it);
   display_title_from_login_without_integrity_verification();
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    // LẮNG NGHE NÚM XOAY
-    if (encoderPos != lastEncoderPos) {
-       if (encoderPos > lastEncoderPos) curr_key++; // Cuộn xuống
-       else curr_key--; // Cuộn lên
-       
-       // Giới hạn vòng lặp cho menu
-       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+    // SỬ DỤNG HÀM NÀY ĐỂ NHẬN TÍN HIỆU TỪ NÚM XOAY HOẶC SERIAL
+    int action = get_nav_action(); 
+    
+    if (action == 1) { // Lên
+       curr_key--;
        if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-       
        header_for_select_login(what_to_do_with_it);
        display_title_from_login_without_integrity_verification();
-       lastEncoderPos = encoderPos;
     }
-
-    // LẮNG NGHE CLICK
-    if (encoderClick) {
-       // Xử lý logic chọn (Action 3)
-       encoderClick = false; // Reset sau khi xử lý
+    else if (action == 2) { // Xuống
+       curr_key++;
+       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+       header_for_select_login(what_to_do_with_it);
+       display_title_from_login_without_integrity_verification();
+    }
+    else if (action == 3) { // CHỌN (Click nút encoder hoặc bấm 'e')
+       // Gọi logic xử lý dựa trên what_to_do_with_it (0: Add, 1: Edit, 2: Del, 3: View)
+       // Ví dụ cho Login:
+       if (what_to_do_with_it == 0) add_login_from_keyboard_and_encdr(curr_key); // Bạn cần viết lại hàm add cho khớp
+       if (what_to_do_with_it == 3) view_login(curr_key);
+       // ... Thêm các case khác tương tự
        continue_to_next = true;
     }
-    
-    delay(10); 
+    else if (action == 4) { // TRỞ VỀ (Hold nút encoder hoặc bấm 'b')
+       call_main_menu();
+       continue_to_next = true;
+    }
+    delay(10); // KHÔNG ĐƯỢC XÓA DÒNG NÀY
   }
 }
 void header_for_select_login(byte what_to_do_with_it) {
