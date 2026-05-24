@@ -3530,7 +3530,63 @@ void view_login(int chsn_slot) {
 // Functions for Logins (Above)
 
 // Functions for Credit Cards (Below)
+void add_credit_card_from_keyboard_and_encdr(int chsn_slot) {
+  // 1. Nhập Title
+  clear_variables();
+  set_stuff_for_input("Enter Title");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; } // Nếu bấm hủy thì thoát thẳng về menu
+  String title = keyboard_input;
 
+  // 2. Nhập Tên chủ thẻ
+  clear_variables();
+  set_stuff_for_input("Enter Cardholder Name");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String cardholder = keyboard_input;
+
+  // 3. Nhập Số thẻ
+  clear_variables();
+  set_stuff_for_input("Enter Card Number");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String card_number = keyboard_input;
+
+  // 4. Nhập Ngày hết hạn
+  clear_variables();
+  set_stuff_for_input("Enter Expiration Date");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String expiry = keyboard_input;
+
+  // 5. Nhập CVN
+  clear_variables();
+  set_stuff_for_input("Enter CVN");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String cvn = keyboard_input;
+
+  // 6. Nhập mã PIN
+  clear_variables();
+  set_stuff_for_input("Enter PIN");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String pin = keyboard_input;
+
+  // 7. Nhập mã bưu điện ZIP
+  clear_variables();
+  set_stuff_for_input("Enter ZIP Code");
+  encdr_and_keyb_input();
+  if (act == false) { call_main_menu(); return; }
+  String zip_code = keyboard_input;
+
+  // Khi đã đi qua hết các bước mà không bị hủy, tiến hành lưu vào flash
+  write_credit_card_to_flash(chsn_slot, title, cardholder, card_number, expiry, cvn, pin, zip_code);
+  
+  clear_variables();
+  call_main_menu();
+}
+// Credit card code cho núm xoay
 void select_credit_card(byte what_to_do_with_it) {
   delay(200);
   curr_key = 1;
@@ -3539,51 +3595,47 @@ void select_credit_card(byte what_to_do_with_it) {
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      
-      // Cuộn lên
-      if (ser_char == 'w' || ser_char == '2') {
-         curr_key--;
-         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-         header_for_select_credit_card(what_to_do_with_it);
-         display_title_from_credit_card_without_integrity_verification();
-      }
-      // Cuộn xuống
-      else if (ser_char == 's' || ser_char == '8') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_credit_card(what_to_do_with_it);
-         display_title_from_credit_card_without_integrity_verification();
-      }
-      // Xác nhận (Enter)
-      else if (ser_char == 'e' || ser_char == '5') {
-         int chsn_slot = curr_key;
-         if (what_to_do_with_it == 0) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) add_credit_card_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) add_credit_card_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 1) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) edit_credit_card_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) edit_credit_card_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 2) {
-           delete_credit_card(chsn_slot);
-         }
-         if (what_to_do_with_it == 3) {
-           view_credit_card(chsn_slot);
-         }
-         continue_to_next = true;
-      }
-      // Hủy bỏ / Quay lại (Esc)
-      else if (ser_char == 'b' || ser_char == 'q') {
-         call_main_menu();
-         continue_to_next = true;
-      }
+    // SỬ DỤNG HÀM HYBRID CỦA BẠN ĐỂ VỪA NHẬN SERIAL VỪA NHẬN NÚM XOAY
+    int action = get_nav_action(); 
+    
+    if (action == 1) { // Lên (w hoặc vặn trái)
+       curr_key--;
+       if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+       header_for_select_credit_card(what_to_do_with_it);
+       display_title_from_credit_card_without_integrity_verification();
     }
-    delay(10); // Chống kẹt Watchdog Timer
+    else if (action == 2) { // Xuống (s hoặc vặn phải)
+       curr_key++;
+       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+       header_for_select_credit_card(what_to_do_with_it);
+       display_title_from_credit_card_without_integrity_verification();
+    }
+    else if (action == 3) { // Chọn (e hoặc Click núm)
+       int chsn_slot = curr_key;
+       if (what_to_do_with_it == 0) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) add_credit_card_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) add_credit_card_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 1) {
+         byte inptsrc = input_source_for_data_in_flash();
+         if (inptsrc == 1) edit_credit_card_from_keyboard_and_encdr(chsn_slot);
+         if (inptsrc == 2) edit_credit_card_from_serial(chsn_slot);
+       }
+       else if (what_to_do_with_it == 2) {
+         delete_credit_card(chsn_slot);
+       }
+       else if (what_to_do_with_it == 3) {
+         view_credit_card(chsn_slot);
+       }
+       continue_to_next = true;
+    }
+    else if (action == 4) { // Quay lại (b hoặc Giữ núm)
+       call_main_menu();
+       continue_to_next = true;
+    }
+    
+    delay(10); // Quan trọng để chip không bị đứng
   }
 }
 void header_for_select_credit_card(byte what_to_do_with_it) {
@@ -3626,274 +3678,52 @@ void display_title_from_credit_card_without_integrity_verification() {
   }
 }
 
-void add_credit_card_from_keyboard_and_encdr(int chsn_slot) {
-  enter_title_for_credit_card(chsn_slot);
-  clear_variables();
-  call_main_menu();
-  return;
-}
-
-void enter_title_for_credit_card(int chsn_slot) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter Title");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_cardholder_for_credit_card(chsn_slot, keyboard_input);
-  }
-  return;
-}
-
-void enter_cardholder_for_credit_card(int chsn_slot, String entered_title) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter Cardholder Name");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_card_number_for_credit_card(chsn_slot, entered_title, keyboard_input);
-  }
-  return;
-}
-
-void enter_card_number_for_credit_card(int chsn_slot, String entered_title, String entered_cardholder) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter Card Number");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_expiry_for_credit_card(chsn_slot, entered_title, entered_cardholder, keyboard_input);
-  }
-  return;
-}
-
-void enter_expiry_for_credit_card(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter Expiration Date");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_cvn_for_credit_card(chsn_slot, entered_title, entered_cardholder, entered_card_number, keyboard_input);
-  }
-  return;
-}
-
-void enter_cvn_for_credit_card(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter CVN");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_pin_for_credit_card(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, keyboard_input);
-  }
-  return;
-}
-
-void enter_pin_for_credit_card(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry, String entered_cvn) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter PIN");
-  encdr_and_keyb_input();
-  if (act == true) {
-    enter_zip_code_for_credit_card(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, entered_cvn, keyboard_input);
-  }
-  return;
-}
-
-void enter_zip_code_for_credit_card(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry, String entered_cvn, String entered_pin) {
-  act = true;
-  clear_variables();
-  set_stuff_for_input("Enter ZIP Code");
-  encdr_and_keyb_input();
-  if (act == true) {
-    write_credit_card_to_flash(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, entered_cvn, entered_pin, keyboard_input);
-  }
-  return;
-}
-
 void add_credit_card_from_serial(int chsn_slot) {
-  get_title_for_credit_card_from_serial(chsn_slot);
+  String title = get_input_from_serial("Title");
+  if (title == "CANCEL_OP") { call_main_menu(); return; }
+
+  String cardholder = get_input_from_serial("Cardholder Name");
+  if (cardholder == "CANCEL_OP") { call_main_menu(); return; }
+
+  String card_number = get_input_from_serial("Card Number");
+  if (card_number == "CANCEL_OP") { call_main_menu(); return; }
+
+  String expiry = get_input_from_serial("Expiration Date");
+  if (expiry == "CANCEL_OP") { call_main_menu(); return; }
+
+  String cvn = get_input_from_serial("CVN");
+  if (cvn == "CANCEL_OP") { call_main_menu(); return; }
+
+  String pin = get_input_from_serial("PIN");
+  if (pin == "CANCEL_OP") { call_main_menu(); return; }
+
+  String zip_code = get_input_from_serial("ZIP Code");
+  if (zip_code == "CANCEL_OP") { call_main_menu(); return; }
+
+  write_credit_card_to_flash(chsn_slot, title, cardholder, card_number, expiry, cvn, pin, zip_code);
   clear_variables();
   call_main_menu();
-  return;
 }
 
-void get_title_for_credit_card_from_serial(int chsn_slot) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Title");
-    Serial.println("\nPaste the title here:");
-    while (!Serial.available()) { delay(10); }
-    get_cardholder_name_for_credit_card_from_serial(chsn_slot, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_cardholder_name_for_credit_card_from_serial(int chsn_slot, String entered_title) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Cardholder Name");
-    Serial.println("\nPaste the cardholder name here:");
-    while (!Serial.available()) { delay(10); }
-    get_card_number_for_credit_card_from_serial(chsn_slot, entered_title, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_card_number_for_credit_card_from_serial(int chsn_slot, String entered_title, String entered_cardholder) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Card Number");
-    Serial.println("\nPaste the card number here:");
-    while (!Serial.available()) { delay(10); }
-    get_expiration_date_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_expiration_date_for_credit_card_from_serial(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Expiration Date");
-    Serial.println("\nPaste the expiration date here:");
-    while (!Serial.available()) { delay(10); }
-    get_cvn_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, entered_card_number, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_cvn_for_credit_card_from_serial(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("CVN");
-    Serial.println("\nPaste the CVN here:");
-    while (!Serial.available()) { delay(10); }
-    get_pin_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_pin_for_credit_card_from_serial(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry, String entered_cvn) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("PIN");
-    Serial.println("\nPaste the PIN here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
+void edit_credit_card_from_serial(int chsn_slot) {
+  if (read_file(SD, "/C" + String(chsn_slot) + "_pin") == "-1") {
+    tft.fillScreen(0x0000);
+    tft.setTextColor(0x07e0);
+    tft.setTextSize(2);
+    disp_centered_text("The Slot N" + String(chsn_slot) + " is Empty", 5);
+    tft.setTextSize(1);
+    tft.setTextColor(0xffff);
+    disp_centered_text("Press any key to return to the main menu", 232);
+    press_any_key_to_continue();
+  } else {
+    //phần edit
+    String new_pin = get_input_from_serial("New PIN");
+    if (new_pin != "CANCEL_OP") {
+      update_credit_card_and_tag(chsn_slot, new_pin);
     }
-    if (canc_op == true)
-      break;
-    get_zip_code_for_credit_card_from_serial(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, entered_cvn, Serial.readString());
-    cont_to_next = true;
-    break;
   }
-  return;
+  call_main_menu();
 }
-
-void get_zip_code_for_credit_card_from_serial(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry, String entered_cvn, String entered_pin) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("ZIP Code");
-    Serial.println("\nPaste the ZIP code here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
-    write_credit_card_to_flash(chsn_slot, entered_title, entered_cardholder, entered_card_number, entered_expiry, entered_cvn, entered_pin, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
 void write_credit_card_to_flash(int chsn_slot, String entered_title, String entered_cardholder, String entered_card_number, String entered_expiry, String entered_cvn, String entered_pin, String entered_zip_code) {
   /*
   Serial.println();
@@ -4005,74 +3835,6 @@ void edit_credit_card_from_keyboard_and_encdr(int chsn_slot) {
     if (act == true) {
       update_credit_card_and_tag(chsn_slot, keyboard_input);
     }
-  }
-  return;
-}
-
-void edit_credit_card_from_serial(int chsn_slot) {
-  if (read_file(SD, "/C" + String(chsn_slot) + "_pin") == "-1") {
-    tft.fillScreen(0x0000);
-    tft.setTextColor(0x07e0);
-    tft.setTextSize(2);
-    disp_centered_text("The Slot N" + String(chsn_slot) + " is Empty", 5);
-    tft.setTextSize(1);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Press any key to return to the main menu", 232);
-    press_any_key_to_continue();
-  }
-  else {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("New PIN");
-    Serial.println("\nPaste new PIN here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
-    update_credit_card_and_tag(chsn_slot, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
   }
   return;
 }
