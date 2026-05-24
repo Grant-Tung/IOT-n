@@ -5,6 +5,7 @@
 #include "DES.h"
 #include "aes.h"
 #include "blowfish.h"
+#include <EncButton2.h>
 #include "serpent.h"
 #include "Crypto.h"
 #include "midbaricon.h"
@@ -15,15 +16,21 @@
 TFT_eSPI tft = TFT_eSPI();       
 TFT_eSprite mvng_bc = TFT_eSprite(&tft);
 #define MAX_NUM_OF_RECS 500
-// --- DUMMY HARDWARE HACK ---
+// --- KHỞI TẠO PHẦN CỨNG THẬT ---
+EncButton2 < EB_ENC > enc0(INPUT_PULLUP, 25, 26);
+EncButton2 < EB_BTN > encoder_button(INPUT_PULLUP, 27);
+volatile int encoderPos = 0;
+volatile bool encoderClick = false;
+// Khai báo nút Chọn (A) và Trở về (B)
+// Lưu ý: Tui đổi chân 34 thành 25 vì chân 34 của ESP32 không có điện trở kéo nội bộ (Pull-up)
+EncButton2 < EB_BTN > a_button(INPUT_PULLUP, 25);
+EncButton2 < EB_BTN > b_button(INPUT_PULLUP, 32);
+
+// Bàn phím PS/2 cũ không xài thì để "Dummy" cho khỏi báo lỗi đỏ
 #define PS2_BREAK 0
-struct DummyButton { void tick(){} bool press(){ return false; } bool hasClicks(int c){ return false; } };
-struct DummyEncoder { void tick(){} bool left(){ return false; } bool right(){ return false; } bool turn(){ return false; } };
 struct DummyKeyboard { bool available(){ return false; } int read(){ return 0; } };
-DummyEncoder enc0;
-DummyButton a_button, b_button, encoder_button;
 DummyKeyboard keyboard;
-// ---------------------------
+// --------------------------------
 DES des;
 Blowfish blowfish;
 uint16_t code;
@@ -197,213 +204,22 @@ void rest_second_AES_key() {
 }
 
 void incr_des_key() {
-  if (des_key[7] == 255) {
-    des_key[7] = 0;
-    if (des_key[6] == 255) {
-      des_key[6] = 0;
-      if (des_key[5] == 255) {
-        des_key[5] = 0;
-        if (des_key[4] == 255) {
-          des_key[4] = 0;
-          if (des_key[3] == 255) {
-            des_key[3] = 0;
-            if (des_key[2] == 255) {
-              des_key[2] = 0;
-              if (des_key[1] == 255) {
-                des_key[1] = 0;
-                if (des_key[0] == 255) {
-                  des_key[0] = 0;
-                } else {
-                  des_key[0]++;
-                }
-              } else {
-                des_key[1]++;
-              }
-            } else {
-              des_key[2]++;
-            }
-          } else {
-            des_key[3]++;
-          }
-        } else {
-          des_key[4]++;
-        }
-      } else {
-        des_key[5]++;
-      }
-    } else {
-      des_key[6]++;
-    }
-  } else {
-    des_key[7]++;
+  for (int i = 7; i >= 0; i--) {
+    if (++des_key[i] != 0) break;
   }
-
-  if (des_key[15] == 255) {
-    des_key[15] = 0;
-    if (des_key[14] == 255) {
-      des_key[14] = 0;
-      if (des_key[13] == 255) {
-        des_key[13] = 0;
-        if (des_key[12] == 255) {
-          des_key[12] = 0;
-          if (des_key[11] == 255) {
-            des_key[11] = 0;
-            if (des_key[10] == 255) {
-              des_key[10] = 0;
-              if (des_key[9] == 255) {
-                des_key[9] = 0;
-                if (des_key[8] == 255) {
-                  des_key[8] = 0;
-                } else {
-                  des_key[8]++;
-                }
-              } else {
-                des_key[9]++;
-              }
-            } else {
-              des_key[10]++;
-            }
-          } else {
-            des_key[11]++;
-          }
-        } else {
-          des_key[12]++;
-        }
-      } else {
-        des_key[13]++;
-      }
-    } else {
-      des_key[14]++;
-    }
-  } else {
-    des_key[15]++;
+  for (int i = 15; i >= 8; i--) {
+    if (++des_key[i] != 0) break;
   }
-
-  if (des_key[23] == 255) {
-    des_key[23] = 0;
-    if (des_key[22] == 255) {
-      des_key[22] = 0;
-      if (des_key[21] == 255) {
-        des_key[21] = 0;
-        if (des_key[20] == 255) {
-          des_key[20] = 0;
-          if (des_key[19] == 255) {
-            des_key[19] = 0;
-            if (des_key[18] == 255) {
-              des_key[18] = 0;
-              if (des_key[17] == 255) {
-                des_key[17] = 0;
-                if (des_key[16] == 255) {
-                  des_key[16] = 0;
-                } else {
-                  des_key[16]++;
-                }
-              } else {
-                des_key[17]++;
-              }
-            } else {
-              des_key[18]++;
-            }
-          } else {
-            des_key[19]++;
-          }
-        } else {
-          des_key[20]++;
-        }
-      } else {
-        des_key[21]++;
-      }
-    } else {
-      des_key[22]++;
-    }
-  } else {
-    des_key[23]++;
+  for (int i = 23; i >= 16; i--) {
+    if (++des_key[i] != 0) break;
   }
 }
-
+// chỉ tăng 16 byte đầu tiên, đi từ index 0 đến 15 Duyệt qua từng byte của khóa (AES_key có 32 byte)
 void incr_AES_key() {
-  if (AES_key[0] == 255) {
-    AES_key[0] = 0;
-    if (AES_key[1] == 255) {
-      AES_key[1] = 0;
-      if (AES_key[2] == 255) {
-        AES_key[2] = 0;
-        if (AES_key[3] == 255) {
-          AES_key[3] = 0;
-          if (AES_key[4] == 255) {
-            AES_key[4] = 0;
-            if (AES_key[5] == 255) {
-              AES_key[5] = 0;
-              if (AES_key[6] == 255) {
-                AES_key[6] = 0;
-                if (AES_key[7] == 255) {
-                  AES_key[7] = 0;
-                  if (AES_key[8] == 255) {
-                    AES_key[8] = 0;
-                    if (AES_key[9] == 255) {
-                      AES_key[9] = 0;
-                      if (AES_key[10] == 255) {
-                        AES_key[10] = 0;
-                        if (AES_key[11] == 255) {
-                          AES_key[11] = 0;
-                          if (AES_key[12] == 255) {
-                            AES_key[12] = 0;
-                            if (AES_key[13] == 255) {
-                              AES_key[13] = 0;
-                              if (AES_key[14] == 255) {
-                                AES_key[14] = 0;
-                                if (AES_key[15] == 255) {
-                                  AES_key[15] = 0;
-                                } else {
-                                  AES_key[15]++;
-                                }
-                              } else {
-                                AES_key[14]++;
-                              }
-                            } else {
-                              AES_key[13]++;
-                            }
-                          } else {
-                            AES_key[12]++;
-                          }
-                        } else {
-                          AES_key[11]++;
-                        }
-                      } else {
-                        AES_key[10]++;
-                      }
-                    } else {
-                      AES_key[9]++;
-                    }
-                  } else {
-                    AES_key[8]++;
-                  }
-                } else {
-                  AES_key[7]++;
-                }
-              } else {
-                AES_key[6]++;
-              }
-            } else {
-              AES_key[5]++;
-            }
-          } else {
-            AES_key[4]++;
-          }
-        } else {
-          AES_key[3]++;
-        }
-      } else {
-        AES_key[2]++;
-      }
-    } else {
-      AES_key[1]++;
-    }
-  } else {
-    AES_key[0]++;
+  for (int i = 0; i <= 15; i++) {
+    if (++AES_key[i] != 0) break; // Nếu không bị tràn về 0 thì dừng lại, không cần nhớ sang byte tiếp theo
   }
 }
-
 void incr_Blwfsh_key() {
   if (Blwfsh_key[0] == 255) {
     Blwfsh_key[0] = 0;
@@ -488,171 +304,30 @@ void incr_Blwfsh_key() {
 }
 
 void incr_serp_key() {
-  if (serp_key[15] == 255) {
-    serp_key[15] = 0;
-    if (serp_key[14] == 255) {
-      serp_key[14] = 0;
-      if (serp_key[13] == 255) {
-        serp_key[13] = 0;
-        if (serp_key[12] == 255) {
-          serp_key[12] = 0;
-          if (serp_key[11] == 255) {
-            serp_key[11] = 0;
-            if (serp_key[10] == 255) {
-              serp_key[10] = 0;
-              if (serp_key[9] == 255) {
-                serp_key[9] = 0;
-                if (serp_key[8] == 255) {
-                  serp_key[8] = 0;
-                  if (serp_key[7] == 255) {
-                    serp_key[7] = 0;
-                    if (serp_key[6] == 255) {
-                      serp_key[6] = 0;
-                      if (serp_key[5] == 255) {
-                        serp_key[5] = 0;
-                        if (serp_key[4] == 255) {
-                          serp_key[4] = 0;
-                          if (serp_key[3] == 255) {
-                            serp_key[3] = 0;
-                            if (serp_key[2] == 255) {
-                              serp_key[2] = 0;
-                              if (serp_key[1] == 255) {
-                                serp_key[1] = 0;
-                                if (serp_key[0] == 255) {
-                                  serp_key[0] = 0;
-                                } else {
-                                  serp_key[0]++;
-                                }
-                              } else {
-                                serp_key[1]++;
-                              }
-                            } else {
-                              serp_key[2]++;
-                            }
-                          } else {
-                            serp_key[3]++;
-                          }
-                        } else {
-                          serp_key[4]++;
-                        }
-                      } else {
-                        serp_key[5]++;
-                      }
-                    } else {
-                      serp_key[6]++;
-                    }
-                  } else {
-                    serp_key[7]++;
-                  }
-                } else {
-                  serp_key[8]++;
-                }
-              } else {
-                serp_key[9]++;
-              }
-            } else {
-              serp_key[10]++;
-            }
-          } else {
-            serp_key[11]++;
-          }
-        } else {
-          serp_key[12]++;
-        }
-      } else {
-        serp_key[13]++;
-      }
-    } else {
-      serp_key[14]++;
-    }
-  } else {
-    serp_key[15]++;
+  // Duyệt từ index 15 ngược về đầu
+  for (int i = 15; i >= 0; i--) {
+    serp_key[i]++;
+    // Nếu giá trị sau khi tăng khác 0, nghĩa là không có hiện tượng tràn
+    if (serp_key[i] != 0) {
+      break;
+    }    
+    // Nếu serp_key[i] == 0, nghĩa là byte đó vừa từ 255 nhảy lên 0 (tràn),
   }
 }
 
 void incr_second_AES_key() {
-  if (second_AES_key[0] == 255) {
-    second_AES_key[0] = 0;
-    if (second_AES_key[1] == 255) {
-      second_AES_key[1] = 0;
-      if (second_AES_key[2] == 255) {
-        second_AES_key[2] = 0;
-        if (second_AES_key[3] == 255) {
-          second_AES_key[3] = 0;
-          if (second_AES_key[4] == 255) {
-            second_AES_key[4] = 0;
-            if (second_AES_key[5] == 255) {
-              second_AES_key[5] = 0;
-              if (second_AES_key[6] == 255) {
-                second_AES_key[6] = 0;
-                if (second_AES_key[7] == 255) {
-                  second_AES_key[7] = 0;
-                  if (second_AES_key[8] == 255) {
-                    second_AES_key[8] = 0;
-                    if (second_AES_key[9] == 255) {
-                      second_AES_key[9] = 0;
-                      if (second_AES_key[10] == 255) {
-                        second_AES_key[10] = 0;
-                        if (second_AES_key[11] == 255) {
-                          second_AES_key[11] = 0;
-                          if (second_AES_key[12] == 255) {
-                            second_AES_key[12] = 0;
-                            if (second_AES_key[13] == 255) {
-                              second_AES_key[13] = 0;
-                              if (second_AES_key[14] == 255) {
-                                second_AES_key[14] = 0;
-                                if (second_AES_key[15] == 255) {
-                                  second_AES_key[15] = 0;
-                                } else {
-                                  second_AES_key[15]++;
-                                }
-                              } else {
-                                second_AES_key[14]++;
-                              }
-                            } else {
-                              second_AES_key[13]++;
-                            }
-                          } else {
-                            second_AES_key[12]++;
-                          }
-                        } else {
-                          second_AES_key[11]++;
-                        }
-                      } else {
-                        second_AES_key[10]++;
-                      }
-                    } else {
-                      second_AES_key[9]++;
-                    }
-                  } else {
-                    second_AES_key[8]++;
-                  }
-                } else {
-                  second_AES_key[7]++;
-                }
-              } else {
-                second_AES_key[6]++;
-              }
-            } else {
-              second_AES_key[5]++;
-            }
-          } else {
-            second_AES_key[4]++;
-          }
-        } else {
-          second_AES_key[3]++;
-        }
-      } else {
-        second_AES_key[2]++;
-      }
-    } else {
-      second_AES_key[1]++;
-    }
-  } else {
-    second_AES_key[0]++;
+  for (int i = 0; i < 16; i++) {
+    if (++second_AES_key[i] != 0) break;
   }
 }
+// Hàm ngắt bắt tín hiệu ngay lập tức dù ESP32 có đang bận vẽ màn hình
+void IRAM_ATTR encoderISR() {
+  enc0.tickISR();
+  encoder_button.tickISR();
 
+  encoderPos = enc0.counter; 
+  if (encoder_button.click()) encoderClick = true;
+}
 size_t hex2bin(void * bin) {
   size_t len, i;
   int x;
@@ -664,69 +339,17 @@ size_t hex2bin(void * bin) {
 }
 
 int getNum(char ch) {
-  int num = 0;
-  if (ch >= '0' && ch <= '9') {
-    num = ch - 0x30;
-  } else {
-    switch (ch) {
-    case 'A':
-    case 'a':
-      num = 10;
-      break;
-    case 'B':
-    case 'b':
-      num = 11;
-      break;
-    case 'C':
-    case 'c':
-      num = 12;
-      break;
-    case 'D':
-    case 'd':
-      num = 13;
-      break;
-    case 'E':
-    case 'e':
-      num = 14;
-      break;
-    case 'F':
-    case 'f':
-      num = 15;
-      break;
-    default:
-      num = 0;
-    }
-  }
-  return num;
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  // Chuyển ký tự về dạng viết hoa để xử lý một lần
+  char upperCh = ch & ~0x20; 
+  if (upperCh >= 'A' && upperCh <= 'F') return upperCh - 'A' + 10; 
+  return 0;
 }
 
 char getChar(int num) {
-  char ch;
-  if (num >= 0 && num <= 9) {
-    ch = char(num + 48);
-  } else {
-    switch (num) {
-    case 10:
-      ch = 'a';
-      break;
-    case 11:
-      ch = 'b';
-      break;
-    case 12:
-      ch = 'c';
-      break;
-    case 13:
-      ch = 'd';
-      break;
-    case 14:
-      ch = 'e';
-      break;
-    case 15:
-      ch = 'f';
-      break;
-    }
-  }
-  return ch;
+  const char hexChars[] = "0123456789abcdef";
+  if (num < 0 || num > 15) return '0'; 
+  return hexChars[num];
 }
 
 void back_keys() {
@@ -3256,99 +2879,194 @@ void check_bounds_and_change_char() {
 }
 
 void disp() {
-  //gfx->fillScreen(0x0000);
   tft.setTextSize(2);
   tft.setTextColor(0xffff);
-  tft.fillRect(62, 0, 10, 16, 0x0000);
+  tft.fillRect(60, 0, 70, 16, 0x0000); 
   tft.setCursor(62, 0);
-  tft.print(char(curr_key));
-  tft.fillRect(288, 0, 22, 14, 0x0000);
+  
+  if (curr_key == 127) tft.print("[DEL]");
+  else if (curr_key == 128) tft.print("[OK]");
+  else tft.print(char(curr_key));
+  
+  // Vẽ mã Hex
+  tft.fillRect(288, 0, 32, 16, 0x0000);
   tft.setCursor(288, 0);
   String hexstr;
-  if (curr_key < 16)
-    hexstr += 0;
+  if (curr_key < 16) hexstr += "0";
   hexstr += String(curr_key, HEX);
   hexstr.toUpperCase();
   tft.setTextColor(0x07e0);
   tft.print(hexstr);
+  
+  // Vẽ chuỗi đang nhập ở phía dưới
   tft.setTextColor(0xffff);
   tft.setTextSize(2);
+  tft.fillRect(0, 48, 320, 160, 0x0000); 
   tft.setCursor(0, 48);
   tft.print(keyboard_input);
 }
 
 void disp_stars() {
-  //gfx->fillScreen(0x0000);
   tft.setTextSize(2);
   tft.setTextColor(0xffff);
-  tft.fillRect(62, 0, 10, 16, 0x0000);
+  
+  tft.fillRect(60, 0, 70, 16, 0x0000);
   tft.setCursor(62, 0);
-  tft.print(char(curr_key));
-  tft.fillRect(288, 0, 22, 14, 0x0000);
+  
+  if (curr_key == 127) tft.print("[DEL]");
+  else if (curr_key == 128) tft.print("[OK]");
+  else tft.print(char(curr_key));
+  
+  tft.fillRect(288, 0, 32, 16, 0x0000);
   tft.setCursor(288, 0);
   String hexstr;
-  if (curr_key < 16)
-    hexstr += 0;
+  if (curr_key < 16) hexstr += "0";
   hexstr += String(curr_key, HEX);
   hexstr.toUpperCase();
   tft.setTextColor(0x07e0);
   tft.print(hexstr);
+  
+  // Tạo chuỗi mã hóa dấu sao
   int plnt = keyboard_input.length();
   String stars = "";
-  for (int i = 0; i < plnt; i++) {
-    stars += "*";
-  }
+  for (int i = 0; i < plnt; i++) stars += "*";
+  
   tft.setTextColor(0xffff);
   tft.setTextSize(2);
+  tft.fillRect(0, 48, 320, 160, 0x0000);
   tft.setCursor(0, 48);
   tft.print(stars);
 }
 void encdr_and_keyb_input() {
   finish_input = false;
   keyboard_input = ""; 
-  disp(); 
-  Serial.println("\n[HE THONG] Nhap noi dung vao Serial Monitor va nhan Enter (Go 'ESC' de huy):");
+  curr_key = 65; // Bắt đầu mặc định ở chữ 'A'
+  disp();
+  Serial.println("\n[HE THONG] Nhap bang Serial hoac dung Numb xoay (Encoder)...");
   
   while (!finish_input) {
+    // 1. SERIAL TERMINAL
     if (Serial.available()) {
       String input = Serial.readStringUntil('\n'); 
-      input.trim(); 
-      
+      input.trim();
       if (input.length() > 0) {
-        if (input == "ESC") { 
-          act = false;
-        } else {
+        if (input == "ESC") act = false;
+        else {
           keyboard_input = input;
+          act = true;
         }
         disp();
         finish_input = true;
+        return;
       }
     }
+    
+    // 2. ENCODER (Arcade Style)
+    enc0.tick();
+    if (enc0.left()) {
+      curr_key--;
+      if (curr_key < 32) curr_key = 128; // Cuộn vòng lại [OK]
+      disp();
+    }
+    if (enc0.right()) {
+      curr_key++;
+      if (curr_key > 128) curr_key = 32; // Cuộn vòng qua Space
+      disp();
+    }
+    
+    encoder_button.tick();
+    if (encoder_button.click()) { // Lệnh Click (Thêm ký tự hoặc OK/DEL)
+      if (curr_key == 127) { // Chức năng [DEL]
+        if (keyboard_input.length() > 0) {
+          keyboard_input.remove(keyboard_input.length() - 1);
+        }
+      } else if (curr_key == 128) { // Chức năng [OK]
+        act = true;
+        finish_input = true;
+      } else { // Ký tự thường
+        keyboard_input += (char)curr_key;
+      }
+      disp();
+    }
+    
+    if (encoder_button.hold()) { // Lệnh Hold 3s (Hủy / ESC)
+      act = false;
+      finish_input = true;
+    }
+    
+    b_button.tick();
+    if (b_button.click()) { // Dự phòng phím vật lý
+      act = false;
+      finish_input = true;
+    }
+    
     delay(10);
   }
 }
 
 void star_encdr_and_keyb_input() {
   finish_input = false;
-  keyboard_input = "";
+  keyboard_input = ""; 
+  curr_key = 65; 
   disp_stars();
-  Serial.println("\n[BAO MAT] Nhap Mat khau (An) vao Serial Monitor va nhan Enter:");
+  Serial.println("\n[BAO MAT] Nhap Mat khau bang Serial hoac Numb xoay...");
   
   while (!finish_input) {
+    // 1. SERIAL
     if (Serial.available()) {
-      String input = Serial.readStringUntil('\n');
+      String input = Serial.readStringUntil('\n'); 
       input.trim();
-      
       if (input.length() > 0) {
-        if (input == "ESC") {
-          act = false;
-        } else {
+        if (input == "ESC") act = false;
+        else {
           keyboard_input = input;
+          act = true;
         }
         disp_stars();
         finish_input = true;
+        return;
       }
     }
+    
+    // 2. ENCODER
+    enc0.tick();
+    if (enc0.left()) {
+      curr_key--;
+      if (curr_key < 32) curr_key = 128;
+      disp_stars();
+    }
+    if (enc0.right()) {
+      curr_key++;
+      if (curr_key > 128) curr_key = 32;
+      disp_stars();
+    }
+    
+    encoder_button.tick();
+    if (encoder_button.click()) { 
+      if (curr_key == 127) {
+        if (keyboard_input.length() > 0) {
+          keyboard_input.remove(keyboard_input.length() - 1);
+        }
+      } else if (curr_key == 128) { 
+        act = true;
+        finish_input = true;
+      } else { 
+        keyboard_input += (char)curr_key;
+      }
+      disp_stars();
+    }
+    
+    if (encoder_button.hold()) {
+      act = false;
+      finish_input = true;
+    }
+    
+    b_button.tick();
+    if (b_button.click()) {
+      act = false;
+      finish_input = true;
+    }
+    
     delay(10);
   }
 }
@@ -3399,57 +3117,35 @@ void delete_file(fs::FS &fs, String filename){
 
 void select_login(byte what_to_do_with_it) {
   delay(200);
-  curr_key = 1;
+  int lastEncoderPos = encoderPos; // Lưu vị trí cũ
+  
   header_for_select_login(what_to_do_with_it);
   display_title_from_login_without_integrity_verification();
   
   bool continue_to_next = false;
   while (!continue_to_next) {
-    if (Serial.available()) {
-      char ser_char = Serial.read();
-      
-      // Cuộn lên
-      if (ser_char == 'w' || ser_char == '2') {
-         curr_key--;
-         if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
-         header_for_select_login(what_to_do_with_it);
-         display_title_from_login_without_integrity_verification();
-      }
-      // Cuộn xuống
-      else if (ser_char == 's' || ser_char == '8') {
-         curr_key++;
-         if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
-         header_for_select_login(what_to_do_with_it);
-         display_title_from_login_without_integrity_verification();
-      }
-      // Chọn / Enter
-      else if (ser_char == 'e' || ser_char == '5') {
-         int chsn_slot = curr_key;
-         if (what_to_do_with_it == 0) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) add_login_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) add_login_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 1) {
-           byte inptsrc = input_source_for_data_in_flash();
-           if (inptsrc == 1) edit_login_from_keyboard_and_encdr(chsn_slot);
-           if (inptsrc == 2) edit_login_from_serial(chsn_slot);
-         }
-         if (what_to_do_with_it == 2) {
-           delete_login(chsn_slot);
-         }
-         if (what_to_do_with_it == 3) {
-           view_login(chsn_slot);
-         }
-         continue_to_next = true;
-      }
-      // Trở lại / Thoát
-      else if (ser_char == 'b' || ser_char == 'q') {
-         call_main_menu();
-         continue_to_next = true;
-      }
+    // LẮNG NGHE NÚM XOAY
+    if (encoderPos != lastEncoderPos) {
+       if (encoderPos > lastEncoderPos) curr_key++; // Cuộn xuống
+       else curr_key--; // Cuộn lên
+       
+       // Giới hạn vòng lặp cho menu
+       if (curr_key > MAX_NUM_OF_RECS) curr_key = 1;
+       if (curr_key < 1) curr_key = MAX_NUM_OF_RECS;
+       
+       header_for_select_login(what_to_do_with_it);
+       display_title_from_login_without_integrity_verification();
+       lastEncoderPos = encoderPos;
     }
-    delay(10); // Ngăn Watchdog timer reset ESP32
+
+    // LẮNG NGHE CLICK
+    if (encoderClick) {
+       // Xử lý logic chọn (Action 3)
+       encoderClick = false; // Reset sau khi xử lý
+       continue_to_next = true;
+    }
+    
+    delay(10); 
   }
 }
 void header_for_select_login(byte what_to_do_with_it) {
@@ -3543,106 +3239,48 @@ void enter_website_for_login(int chsn_slot, String entered_title, String entered
   return;
 }
 
+// Hàm này thay thế cho cả 4 hàm get_..._serial cũ
+String get_input_from_serial(String prompt_msg) {
+  disp_paste_smth_inscr(prompt_msg);
+  Serial.print("\nPaste the "); Serial.print(prompt_msg); Serial.println(" here:");
+  
+  while (Serial.available() > 0) Serial.read(); // Xóa rác Serial
+
+  String result = "";
+  while (true) {
+    // Quét nút để hủy (Cancel)
+    a_button.tick(); b_button.tick(); encoder_button.tick();
+    if (a_button.press() || b_button.press() || encoder_button.press()) {
+      return "CANCEL_OP"; 
+    }
+
+    if (Serial.available()) {
+      result = Serial.readStringUntil('\n');
+      result.trim();
+      if (result.length() > 0) break;
+    }
+    delay(10);
+  }
+  return result;
+}
+
+// Hàm mới để gọi tuần tự, không bị lồng hàm
 void add_login_from_serial(int chsn_slot) {
-  get_title_for_login_from_serial(chsn_slot);
+  String title = get_input_from_serial("Title");
+  if (title == "CANCEL_OP") { call_main_menu(); return; }
+
+  String username = get_input_from_serial("Username");
+  if (username == "CANCEL_OP") { call_main_menu(); return; }
+
+  String password = get_input_from_serial("Password");
+  if (password == "CANCEL_OP") { call_main_menu(); return; }
+
+  String website = get_input_from_serial("Website");
+  if (website == "CANCEL_OP") { call_main_menu(); return; }
+
+  write_login_to_flash(chsn_slot, title, username, password, website);
   clear_variables();
   call_main_menu();
-  return;
-}
-
-void get_title_for_login_from_serial(int chsn_slot) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Title");
-    Serial.println("\nPaste the title here:");
-    while (!Serial.available()) { delay(10); }
-    get_username_for_login_from_serial(chsn_slot, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_username_for_login_from_serial(int chsn_slot, String entered_title) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Username");
-    Serial.println("\nPaste the username here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-        if (c > 0 && ((c & 0xFF) != 6)) {
-          if (c >> 8 == 192 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 129 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-          if (c >> 8 == 128 && (c & PS2_BREAK)) {
-            canc_op = true;
-            break;
-          }
-        }
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
-      break;
-    get_password_for_login_from_serial(chsn_slot, entered_title, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_password_for_login_from_serial(int chsn_slot, String entered_title, String entered_username) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Password");
-    Serial.println("\nPaste the password here:");
-    while (!Serial.available()) { delay(10); }
-    get_website_for_login_from_serial(chsn_slot, entered_title, entered_username, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
-}
-
-void get_website_for_login_from_serial(int chsn_slot, String entered_title, String entered_username, String entered_password) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_smth_inscr("Website");
-    Serial.println("\nPaste the website here:");
-    while (!Serial.available()) { delay(10); }
-    write_login_to_flash(chsn_slot, entered_title, entered_username, entered_password, Serial.readString());
-    cont_to_next = true;
-    break;
-  }
-  return;
 }
 
 void write_login_to_flash(int chsn_slot, String entered_title, String entered_username, String entered_password, String entered_website) {
@@ -5574,7 +5212,7 @@ void lock_scr_without_rfid(){
   display_lock_screen();
   tft.setTextSize(2);
   tft.setTextColor(0xf7de);
-  disp_centered_text_b_w("Press 'e' on Monitor", 209);
+  disp_centered_text_b_w("Press 'e' or Click Numb", 209);
   
   mvng_bc.createSprite(306, 77);
   mvng_bc.setColorDepth(16);
@@ -5582,23 +5220,22 @@ void lock_scr_without_rfid(){
   k = 0;
   bool break_the_loop = false;
   
-  Serial.println("\n[KHOA] Thiet bi dang khoa. Go 'e' tren Monitor de Mo khoa.");
+  Serial.println("\n[KHOA] Thiet bi dang khoa. Go 'e' tren Monitor hoac Nhan Numb de Mo khoa.");
   
   while (!break_the_loop) {
     display_letters_with_shifting_background();
     k++;
 
-    if (Serial.available()) {
-      char c = Serial.read();
-      if (c == 'e' || c == '5') {
+    // DÙNG HYBRID INPUT THAY VÌ CHỈ ĐỌC SERIAL
+    int action = get_nav_action();
+    if (action == 3) { // 3 là Chọn (Phím 'e' hoặc Click núm xoay)
         break_the_loop = true; 
-      }
     }
+    
     delay(10);
   }
   mvng_bc.deleteSprite();
 }
-
 void press_any_key_to_continue() {
   // Xóa sạch dữ liệu thừa trong bộ đệm trước khi chờ phím mới
   while (Serial.available() > 0) { Serial.read(); }
@@ -8476,10 +8113,12 @@ void setup(void) {
   tft.begin();
   tft.fillScreen(0x0000);
   tft.setRotation(1);
-  
+  pinMode(32, OUTPUT);
+  digitalWrite(32, HIGH);
   Serial.begin(115200);
-  Serial.println("\n--- MIDBAR ESP32 (SERIAL FORK) ---");
-
+  pinMode(32, OUTPUT);
+  digitalWrite(32, HIGH);
+  encoder_button.setHoldTimeout(3000);
   if(!SPIFFS.begin(true)){
     Serial.println("Loi SPIFFS!");
   }
@@ -8487,38 +8126,57 @@ void setup(void) {
   sd_mnt = true; 
   m = 2; 
   clb_m = 4;
-
+  attachInterrupt(25, encoderISR, CHANGE);
+  attachInterrupt(26, encoderISR, CHANGE);
+  attachInterrupt(27, encoderISR, CHANGE);
   lock_scr_without_rfid();
   call_main_menu(); 
 }
-
-void loop() {
+// TRẢ VỀ ACTION: 1 (Lên), 2 (Xuống), 3 (Chọn), 4 (Quay lại), 0 (Không làm gì)
+int get_nav_action() {
+  //SERIAL TERMINAL
   if (Serial.available()) {
     char c = Serial.read();
-    
-    if (c == 'w' || c == '2') {
-      curr_key--;
-      if (curr_key < 0) curr_key = 6;
-      main_menu(curr_key);
-    }
-    else if (c == 's' || c == '8') {
-      curr_key++;
-      if (curr_key > 6) curr_key = 0;
-      main_menu(curr_key);
-    }
-    else if (c == 'e' || c == '5') {
-      if (curr_key == 0) action_for_data_in_flash("Logins Menu", curr_key);
-      if (curr_key == 1) action_for_data_in_flash("Credit Cards Menu", curr_key);
-      if (curr_key == 2) action_for_data_in_flash("Notes Menu", curr_key);
-      if (curr_key == 3) action_for_data_in_flash("Phone Numbers Menu", curr_key);
-      if (curr_key == 4) encryption_algorithms();
-      if (curr_key == 5) hash_functions();
-      if (curr_key == 6) other_options();
-    }
-    else if (c == 'b' || c == 'q') {
-      lock_scr_without_rfid(); 
-      call_main_menu();        
-    }
+    if (c == 'w') return 1;
+    if (c == 's') return 2;
+    if (c == 'e') return 3;
+    if (c == 'b') return 4;
   }
-  delay(10); 
+
+  enc0.tick();
+  if (enc0.left())  return 1;
+  if (enc0.right()) return 2;
+  
+  //NÚT NHẤN ENCODER
+  encoder_button.tick();
+  if (encoder_button.click()) return 3; // Nhấn nhả (Click) để CHỌN
+  if (encoder_button.hold())  return 4; // Nhấn giữ 3s (Hold) để QUAY LẠI
+  return 0;
+}
+void loop() {
+  int action = get_nav_action();
+  if (action == 1) { // Lên (w hoặc vặn trái)
+    curr_key--;
+    if (curr_key < 0) curr_key = 6;
+    main_menu(curr_key);
+  }
+  else if (action == 2) { // Xuống (s hoặc vặn phải)
+    curr_key++;
+    if (curr_key > 6) curr_key = 0;
+    main_menu(curr_key);
+  }
+  else if (action == 3) { // Chọn (e hoặc click núm xoay)
+    if (curr_key == 0) action_for_data_in_flash("Logins Menu", curr_key);
+    if (curr_key == 1) action_for_data_in_flash("Credit Cards Menu", curr_key);
+    if (curr_key == 2) action_for_data_in_flash("Notes Menu", curr_key);
+    if (curr_key == 3) action_for_data_in_flash("Phone Numbers Menu", curr_key);
+    if (curr_key == 4) encryption_algorithms();
+    if (curr_key == 5) hash_functions();
+    if (curr_key == 6) other_options();
+  }
+  else if (action == 4) { // Quay lại / Khóa máy (b hoặc hold núm xoay 3s)
+    lock_scr_without_rfid(); 
+    call_main_menu();        
+  }
+  delay(10);
 }
