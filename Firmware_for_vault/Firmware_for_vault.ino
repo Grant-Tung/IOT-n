@@ -5136,87 +5136,22 @@ void where_to_print_plaintext_menu(int curr_pos) {
 void encryption_algorithms_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 50;
-  if (curr_pos == 0) {
-    tft.setTextColor(0xffff);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    disp_centered_text("Serpent", sdown + 110);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 1) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    disp_centered_text("Serpent", sdown + 110);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 2) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    tft.setTextColor(0xffff);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    disp_centered_text("Serpent", sdown + 110);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 3) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    disp_centered_text("Serpent", sdown + 110);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 4) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    tft.setTextColor(0xffff);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Serpent", sdown + 110);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 5) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Serpent", sdown + 110);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Triple DES", sdown + 130);
-  }
-  if (curr_pos == 6) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("3DES+AES+Blfish+Serp CBC", sdown + 10);
-    disp_centered_text("Blowfish+AES+Serp+AES", sdown + 30);
-    disp_centered_text("AES+Serpent+AES", sdown + 50);
-    disp_centered_text("Blowfish+Serpent", sdown + 70);
-    disp_centered_text("AES+Serpent", sdown + 90);
-    disp_centered_text("Serpent", sdown + 110);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Triple DES", sdown + 130);
+  const char* items[] = {
+    "3DES+AES+Blfish+Serp CBC",
+    "Blowfish+AES+Serp+AES",
+    "AES+Serpent+AES",
+    "Blowfish+Serpent",
+    "AES+Serpent",
+    "Serpent",
+    "Triple DES"
+  };
+  for (int i = 0; i < 7; i++) {
+    if (i == curr_pos) {
+      tft.setTextColor(0xffff);
+    } else {
+      tft.setTextColor(current_inact_clr);
+    }
+    disp_centered_text(items[i], sdown + 10 + (i * 20));
   }
 }
 
