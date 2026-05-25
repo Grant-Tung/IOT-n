@@ -5026,147 +5026,72 @@ void call_main_menu() {
 void main_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
-  if (curr_pos == 0) {
-    tft.setTextColor(0xffff);
-    disp_centered_text("Logins", sdown + 10);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Credit Cards", sdown + 30);
-    disp_centered_text("Notes", sdown + 50);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    disp_centered_text("Hash Functions", sdown + 110);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 1) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Credit Cards", sdown + 30);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Notes", sdown + 50);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    disp_centered_text("Hash Functions", sdown + 110);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 2) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    disp_centered_text("Credit Cards", sdown + 30);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Notes", sdown + 50);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    disp_centered_text("Hash Functions", sdown + 110);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 3) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    disp_centered_text("Credit Cards", sdown + 30);
-    disp_centered_text("Notes", sdown + 50);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    disp_centered_text("Hash Functions", sdown + 110);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 4) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    disp_centered_text("Credit Cards", sdown + 30);
-    disp_centered_text("Notes", sdown + 50);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Hash Functions", sdown + 110);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 5) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    disp_centered_text("Credit Cards", sdown + 30);
-    disp_centered_text("Notes", sdown + 50);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Hash Functions", sdown + 110);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Other Options", sdown + 130);
-  }
-  if (curr_pos == 6) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Logins", sdown + 10);
-    disp_centered_text("Credit Cards", sdown + 30);
-    disp_centered_text("Notes", sdown + 50);
-    disp_centered_text("Phone Numbers", sdown + 70);
-    disp_centered_text("Encryption Algorithms", sdown + 90);
-    disp_centered_text("Hash Functions", sdown + 110);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Other Options", sdown + 130);
+  // Khai báo mảng chứa các mục menu
+  const char* menu_items[] = {
+    "Logins",
+    "Credit Cards",
+    "Notes",
+    "Phone Numbers",
+    "Encryption Algorithms",
+    "Hash Functions",
+    "Factory Reset"
+  };
+  int num_items = sizeof(menu_items) / sizeof(menu_items[0]);
+  // Vòng lặp vẽ menu
+  for (int i = 0; i < num_items; i++) {
+    if (i == curr_pos) {
+      tft.setTextColor(0xffff); // Màu sáng cho mục đang được chọn
+    } else {
+      tft.setTextColor(current_inact_clr); // Màu tối cho các mục khác
+    }
+    // Tự động tính toán tọa độ y: sdown + 10 + (i * 20)
+    disp_centered_text(menu_items[i], sdown + 10 + (i * 20));
   }
 }
 
 void input_source_for_data_in_flash_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
-  if (curr_pos == 0) {
-    tft.setTextColor(0xffff);
-    disp_centered_text("Encoder + Keyboard", sdown + 10);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Serial Terminal", sdown + 30);
-  }
-  if (curr_pos == 1) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Encoder + Keyboard", sdown + 10);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Serial Terminal", sdown + 30);
+  
+  const char* menu_items[] = {
+    "Encoder + Keyboard",
+    "Serial Terminal"
+  };
+  
+  int num_items = sizeof(menu_items) / sizeof(menu_items[0]);
+
+  for (int i = 0; i < num_items; i++) {
+    if (i == curr_pos) {
+      tft.setTextColor(0xffff);
+    } else {
+      tft.setTextColor(current_inact_clr);
+    }
+    disp_centered_text(menu_items[i], sdown + 10 + (i * 20));
   }
 }
-
 
 void action_for_data_in_flash_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
-  if (curr_pos == 0) {
-    tft.setTextColor(0xffff);
-    disp_centered_text("Add", sdown + 10);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Edit", sdown + 30);
-    disp_centered_text("Delete", sdown + 50);
-    disp_centered_text("View", sdown + 70);
-  }
-  if (curr_pos == 1) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Add", sdown + 10);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Edit", sdown + 30);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Delete", sdown + 50);
-    disp_centered_text("View", sdown + 70);
-  }
-  if (curr_pos == 2) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Add", sdown + 10);
-    disp_centered_text("Edit", sdown + 30);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Delete", sdown + 50);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("View", sdown + 70);
-  }
-  if (curr_pos == 3) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Add", sdown + 10);
-    disp_centered_text("Edit", sdown + 30);
-    disp_centered_text("Delete", sdown + 50);
-    tft.setTextColor(0xffff);
-    disp_centered_text("View", sdown + 70);
+  
+  const char* menu_items[] = {
+    "Add",
+    "Edit",
+    "Delete",
+    "View"
+  };
+  
+  int num_items = sizeof(menu_items) / sizeof(menu_items[0]);
+
+  for (int i = 0; i < num_items; i++) {
+    if (i == curr_pos) {
+      tft.setTextColor(0xffff);
+    } else {
+      tft.setTextColor(current_inact_clr);
+    }
+    disp_centered_text(menu_items[i], sdown + 10 + (i * 20));
   }
 }
-
 
 void input_source_for_encr_algs_menu(int curr_pos) {
   tft.setTextSize(2);
@@ -5489,41 +5414,6 @@ void hash_functions() {
   call_main_menu();
 }
 
-void other_options() {
-  tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
-  disp_centered_text("Other Options", 10);
-  curr_key = 0; other_options_menu(curr_key);
-  bool cont_to_next = false;
-  while (!cont_to_next) {
-    if (Serial.available()) {
-      char c = Serial.read();
-      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 1; other_options_menu(curr_key); }
-      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 1) curr_key = 0; other_options_menu(curr_key); }
-      else if (c == 'e' || c == '5') { if(curr_key==0) send_password_to_receiver(); if(curr_key==1) Factory_Reset(); cont_to_next = true; }
-      else if (c == 'b' || c == 'q') { cont_to_next = true; }
-    }
-    delay(10);
-  }
-  call_main_menu();
-}
-void other_options_menu(int curr_pos) {
-  tft.setTextSize(2);
-  byte sdown = 60;
-  if (curr_pos == 0) {
-    tft.setTextColor(0xffff);
-    disp_centered_text("Send Password", sdown + 10);
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Factory Reset", sdown + 30);
-  }
-  if (curr_pos == 1) {
-    tft.setTextColor(current_inact_clr);
-    disp_centered_text("Send Password", sdown + 10);
-    tft.setTextColor(0xffff);
-    disp_centered_text("Factory Reset", sdown + 30);
-  }
-}
-
-
 // Menu (Above)
 
 void Factory_Reset() {
@@ -5557,6 +5447,7 @@ void Factory_Reset() {
 }
 
 void perform_factory_reset() {
+  SPIFFS.format();
   tft.fillScreen(0x0000);
   tft.setTextSize(1);
   tft.setTextColor(0xffff);
@@ -7285,292 +7176,6 @@ size_t hex2bin_for_der (void *bin) {
   return 32;
 }
 
-void send_password_to_receiver(){
-  if (send_setup == false)
-    key_setup_for_send_feature();
-  send_password();
-}
-
-void key_setup_for_send_feature(){
-   tft.fillScreen(0x0000);
-   tft.setTextSize(2);
-   tft.setTextColor(0xffff);
-   disp_centered_text("Type this key", 10);
-   disp_centered_text("on the keypad", 30);
-
-  int rnd_len = 64 + esp_random()%75;
-  char rnd_input[rnd_len];
-  for(int i = 0; i < rnd_len; i++){
-    rnd_input[i] = char(esp_random() % 256);
-  }
-  
-  int rnd_key_len = 50 + esp_random()%40;
-  byte rnd_key[rnd_key_len];
-  for(int i = 0; i < rnd_key_len; i++){
-    rnd_key[i] = byte(esp_random() % 256);
-  }
-  
-  SHA256HMAC hmac(rnd_key, sizeof(rnd_key));
-  hmac.doUpdate(rnd_input);
-  byte authCode[SHA256HMAC_SIZE];
-  hmac.doFinal(authCode);
-  String to_kda;
-  for (byte i=10; i < 20; i++)
-  {
-      if (authCode[i]<0x10) { to_kda += '0'; }
-      to_kda += String(authCode[i], HEX);
-      to_kda += ' ';
-  }
-  to_kda.remove(to_kda.length() -1, 1);
-  for (int i = 0; i < to_kda.length(); i++){
-    if (to_kda.charAt(i) == 'a')
-      to_kda[i] = 'A';
-    if (to_kda.charAt(i) == 'b')
-      to_kda[i] = 'B';
-    if (to_kda.charAt(i) == 'c')
-      to_kda[i] = 'C';
-    if (to_kda.charAt(i) == 'd')
-      to_kda[i] = 'D';
-    if (to_kda.charAt(i) == 'e')
-      to_kda[i] = 'E';
-    if (to_kda.charAt(i) == 'f')
-      to_kda[i] = 'F';
-  }
-   
-   String hghprt;
-   String lwrprt;
-   for (int i = 0; i < 14; i++){
-     hghprt += to_kda.charAt(i);
-   }
-
-   for (int i = 0; i < 14; i++){
-     lwrprt += to_kda.charAt(i + 15);
-   }
-
-   tft.setTextColor(0x155b);
-   disp_centered_text(hghprt, 70);
-   disp_centered_text(lwrprt, 90);
-   
-   derive_session_keys(to_kda);
-}
-
-void derive_session_keys(String inp_to_kder){
-  inp_to_kder += "FFE";
-  SHA256HMAC hmac(hmackey_for_session_key, sizeof(hmackey_for_session_key));
-  int str_len = inp_to_kder.length() + 1;
-  char input_arr[str_len];
-  inp_to_kder.toCharArray(input_arr, str_len);
-  hmac.doUpdate(input_arr);
-  byte authCode[SHA256HMAC_SIZE];
-  hmac.doFinal(authCode);
-  for(int i = 0; i < 4; i++){
-    proj_serp_key[i] = authCode[16 + i];
-  }
-  for(int i = 0; i < 4; i++){
-    projection_key[i] = authCode[20 + i];
-  }
-  uint8_t ct1[32], pt1[32], key[64];
-  int plen, clen, i, j;
-  serpent_key skey;
-  serpent_blk ct2;
-  uint32_t *p;
-  
-  for (i=0; i < 1; i++) {
-    hex2bin_for_der (key);
-  
-    // set key
-    memset (&skey, 0, sizeof (skey));
-    p=(uint32_t*)&skey.x[0][0];
-    
-    serpent_setkey (&skey, key);
-    //Serial.printf ("\nkey=");
-
-    for (j=0; j<sizeof(skey)/sizeof(serpent_subkey_t)*4; j++) {
-      if ((j % 8)==0) putchar('\n');
-      //Serial.printf ("%08X ", p[j]);
-    }
-
-    for(int i = 0; i <16; i++)
-      ct2.b[i] = authCode[i];
-    }
-    //Serial.printf("\n");
-    for (int i = 0; i < 1000; i++)
-      serpent_encrypt (ct2.b, &skey, SERPENT_DECRYPT);
-
-    for(int i = 0; i < 6; i++){
-      proj_serp_key[i + 7] = ct2.b[i];
-    }
-    for(int i = 0; i < 6; i++){
-      projection_key[i + 8] = ct2.b[8 + i];
-    }
-    /*
-    for(int i = 0; i < 32; i++){
-      Serial.println(proj_serp_key[i]);
-    }
-    for(int i = 0; i < 32; i++){
-      Serial.println(projection_key[i]);
-    }
-  */
-   send_setup = true;
-   tft.setTextColor(0xffff);
-   disp_centered_text("Verification Numbers", 140);
-   tft.setTextColor(0x155b);
-   String vrnms = String(int(ct2.b[7])) + "  " + String(int(ct2.b[6])) + "  " + String(int(ct2.b[15]));
-   disp_centered_text(vrnms, 170);
-   
-    tft.setTextColor(0xffff);
-    tft.setTextSize(1);
-    tft.drawCentreString("Press any button to continue", 160, 232, 1);
-    press_any_key_to_continue();
-}
-
-void send_password() {
-  n = false;
-  act = true;
-  clear_variables();
-  tft.fillScreen(0x0000);
-  tft.setTextColor(0xffff);
-  tft.setCursor(0, 20);
-  tft.setTextSize(1);
-  set_stuff_for_input("Enter Password to Send");
-  encdr_and_keyb_input();
-  if (act == true) {
-    proj_pass(keyboard_input);
-  }
-  clear_variables();
-  call_main_menu();
-  return;
-}
-
-void proj_pass(String input){
-      int str_len = input.length() + 1;
-      char char_array[str_len];
-      input.toCharArray(char_array, str_len);
-      int p = 0;
-      while( str_len > p+1){
-        split_by_eight_for_pass_proj(char_array, p, str_len);
-        p+=8;
-      }
-    keyboard_input = "";
-    call_main_menu();
-    return;
-}
-
-void split_by_eight_for_pass_proj(char plntxt[], int k, int str_len){
-  char res[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  for (int i = 0; i < 8; i++){
-      if(i+k > str_len - 1)
-      break;
-      res[i] = plntxt[i+k];
-  }
-  for (int i = 8; i < 16; i++){
-      res[i] = esp_random() % 256;
-  }
-  /*
-   for (int i = 0; i < 8; i++){
-     Serial.print(res[i]);
-  }
-  Serial.println();
-  */
-  encr_AES_for_pp(res);
-}
-
-void encr_AES_for_pp(char t_enc[]){
-  uint8_t text[16];
-  for(int i = 0; i<16; i++){
-    int c = int(t_enc[i]);
-    text[i] = c;
-  }
-  uint8_t cipher_text[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  uint32_t key_bit[3] = {128, 192, 256};
-  aes_context ctx;
-  aes_set_key(&ctx, projection_key, key_bit[2]);
-  aes_encrypt_block(&ctx, cipher_text, text);
-  /*
-  for (int i = 0; i < 16; i++) {
-    Serial.printf("%02x", cipher_text[i]);
-  }
-  */
-  char L_half[16];
-  for(int i = 0; i<8; i++){
-    L_half[i] = cipher_text[i];
-  }
-  char R_half[16];
-  for(int i = 0; i<8; i++){
-    R_half[i] = cipher_text[i+8];
-  }
-  for(int i = 8; i<16; i++){
-    L_half[i] = esp_random() % 256;
-    R_half[i] = esp_random() % 256;
-  }
-  serp_for_pp(L_half, false);
-  serp_for_pp(R_half, true);
-}
-
-void serp_for_pp(char res[], bool snd){
-  int tmp_s[16];
-  for(int i = 0; i < 16; i++){
-      tmp_s[i] = res[i];
-  }
-  /*
-   for (int i = 0; i < 16; i++){
-     Serial.print(res[i]);
-  }
-  Serial.println();
-  */
-  uint8_t ct1[32], pt1[32], key[64];
-  int plen, clen, b, j;
-  serpent_key skey;
-  serpent_blk ct2;
-  uint32_t *p;
-  
-  for (b=0; b<1; b++) {
-    hex2binproj(key);
-  
-    // set key
-    memset (&skey, 0, sizeof (skey));
-    p=(uint32_t*)&skey.x[0][0];
-    
-    serpent_setkey (&skey, key);
-    //Serial.printf ("\nkey=");
-    /*
-    for (j=0; j<sizeof(skey)/sizeof(serpent_subkey_t)*4; j++) {
-      if ((j % 8)==0) putchar('\n');
-      Serial.printf ("%08X ", p[j]);
-    }
-    */
-    for(int i = 0; i < 16; i++){
-        ct2.b[i] = tmp_s[i];
-    }
-  serpent_encrypt (ct2.b, &skey, SERPENT_ENCRYPT);
-    /*
-    for (int i=0; i<16; i++) {
-      if(ct2.b[i]<16)
-        Serial.print("0");
-      Serial.print(ct2.b[i],HEX);
-    }
-    */
-    if (snd == false){
-     for(int i = 0; i <16; i++){
-      temp_st_for_pp[i] = ct2.b[i];
-     }
-    }
-    if (snd == true){
-     for(int i = 0; i <16; i++){
-      myData.l_srp[i] = temp_st_for_pp[i];
-      myData.r_srp[i] = ct2.b[i];
-     }
-     myData.n = n;
-     esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
-     incr_projection_key();
-     incr_proj_serp_key();
-     incr_proj_serp_key();
-     n = true;
-     delayMicroseconds(240);
-    }
-  }
-}
-
 // Password Projection (Above)
 void display_letters_with_shifting_background(){
 
@@ -7856,7 +7461,7 @@ void loop() {
     if (curr_key == 3) action_for_data_in_flash("Phone Numbers Menu", curr_key);
     if (curr_key == 4) encryption_algorithms();
     if (curr_key == 5) hash_functions();
-    if (curr_key == 6) other_options();
+    if (curr_key == 6) Factory_Reset();
   }
   else if (action == 4) { // Quay lại / Khóa máy (b hoặc hold núm xoay 3s)
     lock_scr_without_rfid(); 
