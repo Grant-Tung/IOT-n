@@ -20,6 +20,9 @@ DummyKeyboard keyboard;
 // --------------------------------
 TFT_eSPI tft = TFT_eSPI();       
 TFT_eSprite mvng_bc = TFT_eSprite(&tft);
+boolean systemIsLocked = true;
+uint16_t rainbow_hue_counter = 0;
+unsigned long last_lock_update_time = 0;
 #define MAX_NUM_OF_RECS 500
 // sửa đầu vào chân cắm
 EncButton2 < EB_ENC > enc0(INPUT_PULLUP, 25, 26);
@@ -210,14 +213,13 @@ void incr_des_key() {
     if (++des_key[i] != 0) break;
   }
 }
-// chỉ tăng 16 byte đầu tiên, đi từ index 0 đến 15 Duyệt qua từng byte của khóa (AES_key có 32 byte)
 void incr_AES_key() {
   for (int i = 0; i <= 15; i++) {
-    if (++AES_key[i] != 0) break; // Nếu không bị tràn về 0 thì dừng lại, không cần nhớ sang byte tiếp theo
+    if (++AES_key[i] != 0) break;
   }
 }
 void incr_Blwfsh_key() {
-  for (int i = 0; i < 16; i++) { // Khóa Blowfish của bạn đang dùng 16 bytes
+  for (int i = 0; i < 16; i++) {
     if (++Blwfsh_key[i] != 0) break;
   }
 }
@@ -226,7 +228,6 @@ void incr_serp_key() {
   // Duyệt từ index 15 ngược về đầu
   for (int i = 15; i >= 0; i--) {
     serp_key[i]++;
-    // Nếu giá trị sau khi tăng khác 0, nghĩa là không có hiện tượng tràn
     if (serp_key[i] != 0) {
       break;
     }    
@@ -239,7 +240,7 @@ void incr_second_AES_key() {
     if (++second_AES_key[i] != 0) break;
   }
 }
-// Hàm ngắt bắt tín hiệu ngay lập tức dù ESP32 có đang bận vẽ màn hình
+// Hàm ngắt bắt tín hiệu ngay lập tức dù có đang bận vẽ màn hình
 void IRAM_ATTR encoderISR() {
   enc0.tickISR();
   encoder_button.tickISR();
@@ -2949,7 +2950,7 @@ void star_encdr_and_keyb_input() {
       }
     }
     
-    // 2. NHẬN ENCODER QUAY
+    // 2. NHẬN núm xoay
     enc0.tick();
     if (enc0.left()) {
       curr_key--;
@@ -2962,7 +2963,7 @@ void star_encdr_and_keyb_input() {
       disp_stars();
     }
     
-    // 3. NHẬN CLICK/HOLD TỪ NÚT ENCODER
+    // 3. NHẬN CLICK/HOLD
     encoder_button.tick();
     if (encoder_button.click()) { 
       if (curr_key == 127) { // Chức năng [DEL]
@@ -3180,7 +3181,6 @@ void enter_website_for_login(int chsn_slot, String entered_title, String entered
   return;
 }
 
-// Hàm này thay thế cho cả 4 hàm get_..._serial cũ
 String get_input_from_serial(String prompt_msg) {
   disp_paste_smth_inscr(prompt_msg);
   Serial.print("\nPaste the "); Serial.print(prompt_msg); Serial.println(" here:");
@@ -4910,33 +4910,22 @@ void view_phone_number(int chsn_slot) {
 
 // Functions that work with files in LittleFS (Above)
 void lock_scr_without_rfid(){
-  chosen_lock_screen = esp_random() % 12;
-  display_lock_screen();
-  tft.setTextSize(2);
-  tft.setTextColor(0xf7de);
-  disp_centered_text_b_w("Press 'e' or Click Numb", 209);
-  
-  mvng_bc.createSprite(306, 77);
-  mvng_bc.setColorDepth(16);
-  mvng_bc.fillSprite(TFT_TRANSPARENT);
-  k = 0;
-  bool break_the_loop = false;
-  
-  Serial.println("\n[KHOA] Thiet bi dang khoa. Go 'e' tren Monitor hoac Nhan Numb de Mo khoa.");
-  
-  while (!break_the_loop) {
-    display_letters_with_shifting_background();
-    k++;
+  // 1. Tắt đèn màn hình
+  ledcWrite(1, 0); 
 
-    // DÙNG HYBRID INPUT THAY VÌ CHỈ ĐỌC SERIAL
-    int action = get_nav_action();
-    if (action == 3) { // 3 là Chọn (Phím 'e' hoặc Click núm xoay)
-        break_the_loop = true; 
-    }
-    
-    delay(10);
-  }
-  mvng_bc.deleteSprite();
+  // 2. Xóa sạch màn hình về màu đen (chỉ cần làm 1 lần lúc bắt đầu)
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextWrap(false); // Ngắt dòng tự động
+  
+  // 3. Đặt trạng thái hệ thống là ĐÃ KHÓA
+  systemIsLocked = true;
+  rainbow_hue_counter = 0; // Reset hiệu ứng cầu vồng
+  
+  // 4. Gọi drawStaticStatusLines 1 lần đầu tiên để hiện status ngay
+  drawStaticStatusLines();
+  
+  // 5. Mở đèn màn hình trở lại với độ sáng 20
+  ledcWrite(1, 20); 
 }
 void press_any_key_to_continue() {
   // Xóa sạch dữ liệu thừa trong bộ đệm trước khi chờ phím mới
@@ -5026,7 +5015,6 @@ void call_main_menu() {
 void main_menu(int curr_pos) {
   tft.setTextSize(2);
   byte sdown = 60;
-  // Khai báo mảng chứa các mục menu
   const char* menu_items[] = {
     "Logins",
     "Credit Cards",
@@ -5037,14 +5025,12 @@ void main_menu(int curr_pos) {
     "Factory Reset"
   };
   int num_items = sizeof(menu_items) / sizeof(menu_items[0]);
-  // Vòng lặp vẽ menu
   for (int i = 0; i < num_items; i++) {
     if (i == curr_pos) {
-      tft.setTextColor(0xffff); // Màu sáng cho mục đang được chọn
+      tft.setTextColor(0xffff);
     } else {
-      tft.setTextColor(current_inact_clr); // Màu tối cho các mục khác
+      tft.setTextColor(current_inact_clr);
     }
-    // Tự động tính toán tọa độ y: sdown + 10 + (i * 20)
     disp_centered_text(menu_items[i], sdown + 10 + (i * 20));
   }
 }
@@ -5054,7 +5040,7 @@ void input_source_for_data_in_flash_menu(int curr_pos) {
   byte sdown = 60;
   
   const char* menu_items[] = {
-    "Encoder + Keyboard",
+    "Encoder",
     "Serial Terminal"
   };
   
@@ -5098,13 +5084,13 @@ void input_source_for_encr_algs_menu(int curr_pos) {
   byte sdown = 60;
   if (curr_pos == 0) {
     tft.setTextColor(0xffff);
-    disp_centered_text("Encoder + Keyboard", sdown + 10);
+    disp_centered_text("Encoder", sdown + 10);
     tft.setTextColor(current_inact_clr);
     disp_centered_text("Serial Terminal", sdown + 30);
   }
   if (curr_pos == 1) {
     tft.setTextColor(current_inact_clr);
-    disp_centered_text("Encoder + Keyboard", sdown + 10);
+    disp_centered_text("Encoder", sdown + 10);
     tft.setTextColor(0xffff);
     disp_centered_text("Serial Terminal", sdown + 30);
   }
@@ -5276,25 +5262,35 @@ void action_for_data_in_flash(String menu_title, byte record_type) {
   disp_centered_text(menu_title, 10);
   curr_key = 0; action_for_data_in_flash_menu(curr_key);
   bool cont_to_next = false;
+  
   while (!cont_to_next) {
-    if (Serial.available()) {
-      char c = Serial.read();
-      if (c == 'w' || c == '2') { curr_key--; if (curr_key < 0) curr_key = 3; action_for_data_in_flash_menu(curr_key); }
-      else if (c == 's' || c == '8') { curr_key++; if (curr_key > 3) curr_key = 0; action_for_data_in_flash_menu(curr_key); }
-      else if (c == 'e' || c == '5') {
-        if (curr_key == 0) { if(record_type==0) select_login(0); if(record_type==1) select_credit_card(0); if(record_type==2) select_note(0); if(record_type==3) select_phone_number(0); }
-        if (curr_key == 1) { if(record_type==0) select_login(1); if(record_type==1) select_credit_card(1); if(record_type==2) select_note(1); if(record_type==3) select_phone_number(1); }
-        if (curr_key == 2) { if(record_type==0) select_login(2); if(record_type==1) select_credit_card(2); if(record_type==2) select_note(2); if(record_type==3) select_phone_number(2); }
-        if (curr_key == 3) { if(record_type==0) select_login(3); if(record_type==1) select_credit_card(3); if(record_type==2) select_note(3); if(record_type==3) select_phone_number(3); }
-        cont_to_next = true;
-      }
-      else if (c == 'b' || c == 'q') { cont_to_next = true; }
+    int action = get_nav_action(); 
+    
+    if (action == 1) { // Cuộn lên
+      curr_key--; 
+      if (curr_key < 0) curr_key = 3; 
+      action_for_data_in_flash_menu(curr_key); 
     }
+    else if (action == 2) { // Cuộn xuống
+      curr_key++; 
+      if (curr_key > 3) curr_key = 0; 
+      action_for_data_in_flash_menu(curr_key); 
+    }
+    else if (action == 3) { // Chọn
+      if (curr_key == 0) { if(record_type==0) select_login(0); if(record_type==1) select_credit_card(0); if(record_type==2) select_note(0); if(record_type==3) select_phone_number(0); }
+      if (curr_key == 1) { if(record_type==0) select_login(1); if(record_type==1) select_credit_card(1); if(record_type==2) select_note(1); if(record_type==3) select_phone_number(1); }
+      if (curr_key == 2) { if(record_type==0) select_login(2); if(record_type==1) select_credit_card(2); if(record_type==2) select_note(2); if(record_type==3) select_phone_number(2); }
+      if (curr_key == 3) { if(record_type==0) select_login(3); if(record_type==1) select_credit_card(3); if(record_type==2) select_note(3); if(record_type==3) select_phone_number(3); }
+      cont_to_next = true;
+    }
+    else if (action == 4) { // Hủy / Quay lại
+      cont_to_next = true; 
+    }
+    
     delay(10);
   }
   call_main_menu();
 }
-
 void input_source_for_encr_algs(byte record_type) {
   tft.fillScreen(0x0000); tft.setTextSize(2); tft.setTextColor(current_inact_clr);
   disp_centered_text("Choose Input Source", 10);
@@ -5481,17 +5477,17 @@ void perform_factory_reset() {
     tft.setTextSize(1);
     tft.setTextColor(0xffff);
     tft.setCursor(0, 0);
-    tft.print("Performing Factory Reset...");
+    tft.print("DANG RESET DUNG DONG VAO");
     tft.setCursor(0, 10);
-    tft.print("Do Not Touch The PS/2 Keyboard!");
+    tft.print("BOOMMMMMMMMM !!!!!!!");
     tft.setCursor(0, 20);
     tft.print("Progress " + String((float(i + 1)/float(MAX_NUM_OF_RECS))*100) + "%" );
   }
   tft.fillScreen(0x0000);
   tft.setTextColor(0xffff);
   disp_centered_text("DONE!", 10);
-  disp_centered_text("Please reboot", 30);
-  disp_centered_text("the device", 40);
+  disp_centered_text("Lam moi", 30);
+  disp_centered_text("Thiet bi di", 40);
   delay(100);
   for (;;){}
 }
@@ -6594,72 +6590,52 @@ void encr_tdes_only_from_Serial() {
     return;
   }
 }
-
 void decr_tdes_only(bool print_plt_on_disp_or_serial) {
-  bool cont_to_next = false;
-  while (cont_to_next == false) {
-    disp_paste_cphrt_inscr();
-    Serial.println("\nPaste the ciphertext here:");
-    bool canc_op = false;
-    while (!Serial.available()) {
-      a_button.tick();
-      if (a_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      b_button.tick();
-      if (b_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-
-      if (keyboard.available()) {
-        c = keyboard.read();
-
-            canc_op = true;
-            break;
-
-      }
-
-      delayMicroseconds(400);
-      encoder_button.tick();
-      if (encoder_button.press()) {
-        canc_op = true;
-        break;
-      }
-      delayMicroseconds(400);
-    }
-    if (canc_op == true)
+  disp_paste_cphrt_inscr();
+  Serial.println("\nPaste the ciphertext here:"); 
+  bool canc_op = false;
+  while (!Serial.available()) {
+    a_button.tick();
+    b_button.tick();
+    encoder_button.tick();
+    if (a_button.press() || b_button.press() || encoder_button.press()) {
+      canc_op = true;
       break;
-    tft.fillScreen(0x0000);
-    tft.setTextSize(1);
-    tft.setTextColor(0xffff);
-    tft.setCursor(0, 0);
-    tft.print("Decrypting the text...");
-    tft.setCursor(0, 10);
-    tft.print("Please wait for a while.");
-    String ct = Serial.readString();
-    decrypt_with_tdes_only(ct);
-    bool plt_integr = verify_integrity();
-    if (print_plt_on_disp_or_serial == true) {
-      disp_plt_on_tft(plt_integr);
-      clear_variables();
-      press_any_key_to_continue();
-    } else {
-      Serial.println("Plaintext:");
-      Serial.println(dec_st);
-      if (plt_integr == true)
-        Serial.println("Integrity verified successfully!");
-      else
-        Serial.println("Integrity Verification failed!!!");
     }
-    clear_variables();
+    delay(5); 
+  }
+  if (canc_op) {
     call_main_menu();
     return;
   }
+  tft.fillScreen(TFT_BLACK); // Dùng macro màu chuẩn
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(0, 0);
+  tft.print("Decrypting the text...");
+  tft.setCursor(0, 10);
+  tft.print("Please wait for a while.");
+  
+  String ct = Serial.readString();
+  decrypt_with_tdes_only(ct);
+  bool plt_integr = verify_integrity();
+  
+  if (print_plt_on_disp_or_serial) {
+    disp_plt_on_tft(plt_integr);
+    clear_variables();
+    press_any_key_to_continue();
+  } else {
+    Serial.println("Plaintext:");
+    Serial.println(dec_st);
+    if (plt_integr) {
+      Serial.println("Integrity verified successfully!");
+    } else {
+      Serial.println("Integrity Verification failed!!!");
+    }
+  }
+  
+  clear_variables();
+  call_main_menu();
 }
 
 // func set master pass-----------------------------------
@@ -6712,9 +6688,9 @@ void set_pass() {
   }
   
   tft.setTextColor(0xffff);
-  disp_centered_text("Master Password Set", 65);
-  disp_centered_text("Successfully", 85);
-  disp_centered_text("to continue", 165);
+  disp_centered_text("Setting thanh cong", 65);
+  disp_centered_text("CAM ON VI DA DEN", 85);
+  disp_centered_text("WELCOME", 135);
   
   Serial.println("\n[XAC NHAN] Go Enter hoac Nhan Encoder de tiep tuc...");
   bool cont1 = true;
@@ -6735,6 +6711,7 @@ void set_pass() {
 
 void unlock_midbar() {
   clear_variables();
+  systemIsLocked = false;
   tft.fillScreen(0x0000);
   tft.setTextColor(0xffff);
   tft.setTextSize(2);
@@ -6749,9 +6726,9 @@ void unlock_midbar() {
     vTaskDelay(1);
   }
   tft.setTextSize(2);
-  disp_centered_text("Unlocking Midbar", 65);
-  disp_centered_text("Please wait", 85);
-  disp_centered_text("for a while", 105);
+  disp_centered_text("Yasssss, Welcome !!!", 65);
+  disp_centered_text("CAM ON VI DA DEN", 85);
+  disp_centered_text("UIT", 105);
   
   String bck = keyboard_input;
   modify_keys();
@@ -6769,11 +6746,11 @@ void unlock_midbar() {
   
   if (next_act) {
     tft.setTextSize(2);
-    disp_centered_text("Midbar unlocked", 65);
-    disp_centered_text("successfully", 85);
-    disp_centered_text("to continue", 165);
+    disp_centered_text("Mo khoa thanh cong", 65);
+    disp_centered_text("CAM ON VI DA DEN", 85);
+    disp_centered_text("", 165);
     
-    Serial.println("\n[XAC NHAN] Go Enter hoac click Encoder de tiep tuc...");
+    Serial.println("\n[XAC NHAN] Go Enter hoac click num xoay de tiep tuc...");
     bool cont1 = true;
     while (cont1) {
       if (Serial.available()) {
@@ -6790,9 +6767,8 @@ void unlock_midbar() {
     tft.setTextColor(five_six_five_red_color);
     disp_centered_text("Wrong Password!", 65);
     tft.setTextColor(0xffff);
-    disp_centered_text("Please reboot", 100);
-    disp_centered_text("the device", 120);
-    disp_centered_text("and try again", 140);
+    disp_centered_text("Reset pass now", 100);
+    disp_centered_text("NT131.Q21", 120);
     for (;;) vTaskDelay(1000);
   }
 }
@@ -6822,7 +6798,6 @@ void set_psswd() {
     }
     h = sha512(str1).c_str();
     vTaskDelay(1); // Hàm băm 522 vòng, chèn vTaskDelay(1) để giữ chip ổn định
-    
     if (i == ((numofkincr * 2) / 3)) {
       for (int j = 0; j < 8; j++) h += String(read_cards[j], HEX);
     }
@@ -6991,171 +6966,20 @@ typedef struct struct_message {
 struct_message myData;
 
 void incr_projection_key() {
-  if (projection_key[0] == 255) {
-    projection_key[0] = 0;
-    if (projection_key[1] == 255) {
-      projection_key[1] = 0;
-      if (projection_key[2] == 255) {
-        projection_key[2] = 0;
-        if (projection_key[3] == 255) {
-          projection_key[3] = 0;
-          if (projection_key[4] == 255) {
-            projection_key[4] = 0;
-            if (projection_key[5] == 255) {
-              projection_key[5] = 0;
-              if (projection_key[6] == 255) {
-                projection_key[6] = 0;
-                if (projection_key[7] == 255) {
-                  projection_key[7] = 0;
-                  if (projection_key[8] == 255) {
-                    projection_key[8] = 0;
-                    if (projection_key[9] == 255) {
-                      projection_key[9] = 0;
-                      if (projection_key[10] == 255) {
-                        projection_key[10] = 0;
-                        if (projection_key[11] == 255) {
-                          projection_key[11] = 0;
-                          if (projection_key[12] == 255) {
-                            projection_key[12] = 0;
-                            if (projection_key[13] == 255) {
-                              projection_key[13] = 0;
-                              if (projection_key[14] == 255) {
-                                projection_key[14] = 0;
-                                if (projection_key[15] == 255) {
-                                  projection_key[15] = 0;
-                                } else {
-                                  projection_key[15]++;
-                                }
-                              } else {
-                                projection_key[14]++;
-                              }
-                            } else {
-                              projection_key[13]++;
-                            }
-                          } else {
-                            projection_key[12]++;
-                          }
-                        } else {
-                          projection_key[11]++;
-                        }
-                      } else {
-                        projection_key[10]++;
-                      }
-                    } else {
-                      projection_key[9]++;
-                    }
-                  } else {
-                    projection_key[8]++;
-                  }
-                } else {
-                  projection_key[7]++;
-                }
-              } else {
-                projection_key[6]++;
-              }
-            } else {
-              projection_key[5]++;
-            }
-          } else {
-            projection_key[4]++;
-          }
-        } else {
-          projection_key[3]++;
-        }
-      } else {
-        projection_key[2]++;
-      }
-    } else {
-      projection_key[1]++;
+  for (int i = 0; i < 16; i++) {
+    if (++projection_key[i] != 0) {
+      break; 
     }
-  } else {
-    projection_key[0]++;
   }
 }
 
 void incr_proj_serp_key() {
-  if (proj_serp_key[15] == 255) {
-    proj_serp_key[15] = 0;
-    if (proj_serp_key[14] == 255) {
-      proj_serp_key[14] = 0;
-      if (proj_serp_key[13] == 255) {
-        proj_serp_key[13] = 0;
-        if (proj_serp_key[12] == 255) {
-          proj_serp_key[12] = 0;
-          if (proj_serp_key[11] == 255) {
-            proj_serp_key[11] = 0;
-            if (proj_serp_key[10] == 255) {
-              proj_serp_key[10] = 0;
-              if (proj_serp_key[9] == 255) {
-                proj_serp_key[9] = 0;
-                if (proj_serp_key[8] == 255) {
-                  proj_serp_key[8] = 0;
-                  if (proj_serp_key[7] == 255) {
-                    proj_serp_key[7] = 0;
-                    if (proj_serp_key[6] == 255) {
-                      proj_serp_key[6] = 0;
-                      if (proj_serp_key[5] == 255) {
-                        proj_serp_key[5] = 0;
-                        if (proj_serp_key[4] == 255) {
-                          proj_serp_key[4] = 0;
-                          if (proj_serp_key[3] == 255) {
-                            proj_serp_key[3] = 0;
-                            if (proj_serp_key[2] == 255) {
-                              proj_serp_key[2] = 0;
-                              if (proj_serp_key[1] == 255) {
-                                proj_serp_key[1] = 0;
-                                if (proj_serp_key[0] == 255) {
-                                  proj_serp_key[0] = 0;
-                                } else {
-                                  proj_serp_key[0]++;
-                                }
-                              } else {
-                                proj_serp_key[1]++;
-                              }
-                            } else {
-                              proj_serp_key[2]++;
-                            }
-                          } else {
-                            proj_serp_key[3]++;
-                          }
-                        } else {
-                          proj_serp_key[4]++;
-                        }
-                      } else {
-                        proj_serp_key[5]++;
-                      }
-                    } else {
-                      proj_serp_key[6]++;
-                    }
-                  } else {
-                    proj_serp_key[7]++;
-                  }
-                } else {
-                  proj_serp_key[8]++;
-                }
-              } else {
-                proj_serp_key[9]++;
-              }
-            } else {
-              proj_serp_key[10]++;
-            }
-          } else {
-            proj_serp_key[11]++;
-          }
-        } else {
-          proj_serp_key[12]++;
-        }
-      } else {
-        proj_serp_key[13]++;
-      }
-    } else {
-      proj_serp_key[14]++;
+  for (int i = 15; i >= 0; i--) {
+    if (++proj_serp_key[i] != 0) {
+      break; 
     }
-  } else {
-    proj_serp_key[15]++;
   }
 }
-
 size_t hex2binproj (void *bin) {
   size_t len, i;
   int x;
@@ -7178,216 +7002,18 @@ size_t hex2bin_for_der (void *bin) {
 
 // Password Projection (Above)
 void display_letters_with_shifting_background(){
-
-  if (chosen_lock_screen == 0){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Beirut[(i + 7 + k)%320][j+87]);
-      }
+  for (int i = 0; i < 306; i++){
+    for (int j = 0; j < 77; j++){
+      if (mdb_icon[i][j] == 1)
+        mvng_bc.drawPixel(i, j, Beirut[(i + 7 + k)%320][j+87]);
     }
   }
-
-  if (chosen_lock_screen == 1){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Dallas[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 2){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Denver[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 3){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Greenwich[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 4){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, La_Defense[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 5){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, LA[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 6){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Miami[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 7){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Milan[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 8){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Montreal[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 9){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Omaha[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 10){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, Tel_Aviv[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 11){
-    for (int i = 0; i < 306; i++){
-      for (int j = 0; j < 77; j++){
-        if (mdb_icon[i][j] == 1)
-          mvng_bc.drawPixel(i, j, TF[(i + 7 + k)%320][j+87]);
-      }
-    }
-  }
-
   mvng_bc.pushSprite(7, 87, TFT_TRANSPARENT);
 }
-
 void display_lock_screen(){
-
-  if (chosen_lock_screen == 0){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Beirut[i][j]);
-      }
-    }
+  for (int i = 0; i < 320; i++) {
+    tft.pushImage(i, 0, 1, 240, (uint16_t*)&Beirut[i][0]);
   }
-
-  if (chosen_lock_screen == 1){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Dallas[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 2){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Denver[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 3){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Greenwich[i][j]);
-      }
-    }
-  }
-  
-  if (chosen_lock_screen == 4){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, La_Defense[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 5){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, LA[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 6){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Miami[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 7){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Milan[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 8){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Montreal[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 9){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Omaha[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 10){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, Tel_Aviv[i][j]);
-      }
-    }
-  }
-
-  if (chosen_lock_screen == 11){
-    for (int i = 0; i < 320; i++){
-      for (int j = 0; j < 240; j++){
-        tft.drawPixel(i, j, TF[i][j]);
-      }
-    }
-  }
-
   for (int i = 0; i < 306; i++){
     for (int j = 0; j < 77; j++){
       if (mdb_per[i][j] == 1)
@@ -7395,7 +7021,93 @@ void display_lock_screen(){
     }
   }
 }
+// ---------------------------------------------------------
+//MÀN HÌNH CHỜ UIT
+// 1. Hàm sinh ra các hạt "bụi" màu sắc xung quanh (Colorful Particles)
+void drawProceduralParticles() {
+  // Chỉ vẽ 20 hạt mỗi frame để đảm bảo tốc độ mượt mà
+  for (int i = 0; i < 20; i++) {
+    // Tạo vị trí ngẫu nhiên trên màn hình 320x240
+    int16_t px = esp_random() % 320;
+    int16_t py = esp_random() % 240;
+    // Chỉ vẽ nếu điểm này không nằm trong khu vực chữ UIT ở giữa
+    // (UIT nằm khoảng từ x=60 đến x=260, y=80 đến y=160)
+    if (!(px > 60 && px < 260 && py > 80 && py < 160)) {
+      // Tạo màu ngẫu nhiên nhưng rực rỡ (dùng chuẩn 565)
+      uint16_t p_clr = tft.color565(
+        (esp_random() % 128) + 128, // Red rực rỡ
+        (esp_random() % 128) + 128, // Green rực rỡ
+        (esp_random() % 128) + 128  // Blue rực rỡ
+      );
+      // Vẽ một hạt nhỏ (1 pixel)
+      tft.drawPixel(px, py, p_clr);
+    }
+  }
+}
+// 2. Hàm vẽ chữ NT131.Q21 ở giữa với hiệu ứng cầu vồng (Rainbow Text)
+void drawRainbowUITText(uint16_t hue) {
+  // Sử dụng một thuật toán đơn giản để chuyển đổi Hue sang màu 565
+  byte r, g, b;
+  byte pos = hue & 0xFF; // Giới hạn pos từ 0-255
+  if (pos < 85) {
+    r = 255 - pos * 3;
+    g = 0;
+    b = pos * 3;
+  } else if (pos < 170) {
+    pos -= 85;
+    r = 0;
+    g = pos * 3;
+    b = 255 - pos * 3;
+  } else {
+    pos -= 170;
+    r = pos * 3;
+    g = 255 - pos * 3;
+    b = 0;
+  }
+  
+  uint16_t uit_clr = tft.color565(r, g, b);
 
+  // Vẽ chữ NT131.Q21 ở giữa
+  tft.setTextColor(uit_clr, TFT_BLACK); 
+  
+  // Đã giảm size xuống 4 để vừa với độ dài của chuỗi ký tự mới
+  tft.setTextSize(4); 
+  
+  // Điều chỉnh cursor để căn giữa "NT131.Q21" trên màn hình 320px
+  // Với size 4, mỗi ký tự khoảng 24-28px, 9 ký tự ~ 230px + khoảng trống
+  tft.setCursor(45, 100); 
+  tft.print("NT131.Q21");
+}
+// 3. Hàm vẽ các dòng trạng thái cố định bên dưới
+void drawStaticStatusLines() {
+  tft.setTextColor(0x07FF, TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setCursor(80, 180);
+  tft.print("Locked");
+  
+  tft.setTextColor(0xf7de, TFT_BLACK); // Màu xám cố định
+  tft.setTextSize(1);
+  tft.setCursor(65, 220);
+  tft.print("Cam on thay Dang Le Bao Chuong");
+}
+void render_lock_screen_frame() {
+  // Giới hạn tốc độ cập nhật để không làm quá tải CPU (ví dụ: 15 frame/giây)
+  if (millis() - last_lock_update_time < 66) return;
+  last_lock_update_time = millis();
+
+  // A. Vẽ các hạt bụi màu sắc (nó sẽ vẽ đè lên nhau tạo hiệu ứng động)
+  drawProceduralParticles();
+  
+  // B. Vẽ lại chữ UIT với màu mới
+  drawRainbowUITText(rainbow_hue_counter);
+  rainbow_hue_counter += 10; // Tăng counter để đổi màu cho frame sau
+  if (rainbow_hue_counter > 255) rainbow_hue_counter = 0;
+  
+  // C. Vẽ lại các dòng status cố định (để đảm bảo không bị hạt bụi vẽ đè lên)
+  drawStaticStatusLines();
+}
+
+// ---------------------------------------------------------
 void setup(void) {
   tft.begin();
   tft.fillScreen(0x0000);
@@ -7443,29 +7155,51 @@ int get_nav_action() {
   return 0;
 }
 void loop() {
+  // [A] NẾU HỆ THỐNG ĐANG KHÓA -> CHỈ RENDER MÀN HÌNH CHỜ UIT ĐỘNG
+  if (systemIsLocked) {
+    // 1. Chạy hàm Render Frame cho màn hình chờ UIT
+    render_lock_screen_frame();
+    
+    // 2. Kiểm tra xem người dùng có thao tác (bấm núm/xoay) để mở khóa không
+    int action = get_nav_action();
+    if (action != 0) {
+      // Nếu có thao tác, thoát khỏi vòng render màn hình chờ
+      // và nhảy sang hàm unlock_midbar (nhập mật khẩu)
+      unlock_midbar();
+    }
+    
+    // 3. Delay cực nhỏ để không làm chip quá nóng
+    delay(10);
+    return; // Thoát khỏi loop để không chạy menu
+  }
+
+  // [B] NẾU HỆ THỐNG ĐÃ MỞ KHÓA (UNLOCK) -> CHẠY MENU CHÍNH
   int action = get_nav_action();
-  if (action == 1) { // Lên (w hoặc vặn trái)
+  
+  if (action == 1) { // Lên
     curr_key--;
     if (curr_key < 0) curr_key = 6;
     main_menu(curr_key);
   }
-  else if (action == 2) { // Xuống (s hoặc vặn phải)
+  else if (action == 2) { // Xuống
     curr_key++;
     if (curr_key > 6) curr_key = 0;
     main_menu(curr_key);
   }
-  else if (action == 3) { // Chọn (e hoặc click núm xoay)
+  else if (action == 3) { // Chọn (Click)
     if (curr_key == 0) action_for_data_in_flash("Logins Menu", curr_key);
     if (curr_key == 1) action_for_data_in_flash("Credit Cards Menu", curr_key);
     if (curr_key == 2) action_for_data_in_flash("Notes Menu", curr_key);
     if (curr_key == 3) action_for_data_in_flash("Phone Numbers Menu", curr_key);
+    if (curr_key == 6) Factory_Reset();
     if (curr_key == 4) encryption_algorithms();
     if (curr_key == 5) hash_functions();
-    if (curr_key == 6) Factory_Reset();
   }
-  else if (action == 4) { // Quay lại / Khóa máy (b hoặc hold núm xoay 3s)
-    lock_scr_without_rfid(); 
-    call_main_menu();        
+  else if (action == 4) { // Quay lại / Khóa máy
+    // Khi bấm Quay lại từ Menu chính, gọi hàm Khóa máy
+    lock_scr_without_rfid();
+    // main_menu(curr_key); // <-- Không gọi lại menu nữa
   }
+  
   delay(10);
 }
